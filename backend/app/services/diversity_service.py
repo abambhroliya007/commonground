@@ -12,19 +12,19 @@ from typing import Any
 
 DEFAULT_RESULT_COUNT = 6
 
-# How much variety matters compared with raw group score.
-# Keep these relatively small so a 95% match does not lose
-# to a mediocre movie purely because it is different.
+# Diversity weights stay intentionally modest so
+# relevance still matters more than novelty.
 GENRE_DIVERSITY_WEIGHT = 7.0
 ERA_DIVERSITY_WEIGHT = 6.0
-NOVELTY_WEIGHT = 8.0
+RANDOMNESS_WEIGHT = 4.0
 
-# Small random variation among otherwise strong candidates.
-RANDOMNESS_WEIGHT = 4.5
-
-# Movies within this many points of the strongest candidate
-# are treated as being in a similarly strong neighborhood.
+# How far below the strongest candidate a movie can be
+# before diversity bonuses are dampened.
 QUALITY_WINDOW = 16
+
+# Number of previously seen movies we are willing to
+# reuse only if the fresh pool is too small.
+FALLBACK_REUSE_LIMIT = 2
 
 
 # ---------------------------------------------------------
@@ -51,7 +51,9 @@ def _safe_float(
         return default
 
 
-def _movie_id(movie: dict[str, Any]) -> int:
+def _movie_id(
+    movie: dict[str, Any],
+) -> int:
     return _safe_int(
         movie.get("id"),
         0,
@@ -269,11 +271,6 @@ def _genre_diversity_bonus(
         default=0.0,
     )
 
-    # Completely different genres:
-    # bonus approaches full weight.
-    #
-    # Identical genre sets:
-    # bonus approaches zero.
     return (
         1.0
         - highest_similarity
@@ -311,14 +308,9 @@ def _era_diversity_bonus(
         selected_eras
     )
 
-    if (
-        movie_era
-        not in counts
-    ):
+    if movie_era not in counts:
         return ERA_DIVERSITY_WEIGHT
 
-    # Repeated eras remain allowed,
-    # but get less of a bonus.
     repeated_count = counts[
         movie_era
     ]
@@ -329,27 +321,6 @@ def _era_diversity_bonus(
             repeated_count
             + 2
         )
-    )
-
-
-def _novelty_bonus(
-    movie: dict[str, Any],
-    excluded_movie_ids: set[int],
-) -> float:
-    movie_id = _movie_id(
-        movie
-    )
-
-    if (
-        movie_id
-        and movie_id
-        in excluded_movie_ids
-    ):
-        return -NOVELTY_WEIGHT
-
-    return (
-        NOVELTY_WEIGHT
-        * 0.25
     )
 
 
@@ -397,9 +368,6 @@ def _quality_factor(
 # ---------------------------------------------------------
 
 def _random_bonus() -> float:
-    # Triangular distribution keeps most random
-    # values near the middle instead of producing
-    # wild swings.
     return random.triangular(
         0.0,
         RANDOMNESS_WEIGHT,
@@ -409,52 +377,16 @@ def _random_bonus() -> float:
 
 
 # ---------------------------------------------------------
-# MAIN DIVERSIFICATION
+# DEDUPLICATION
 # ---------------------------------------------------------
 
-def diversify_movies(
+def _deduplicate(
     movies: list[
         dict[str, Any]
     ],
-    *,
-    excluded_movie_ids: list[int]
-    | None = None,
-    limit: int = DEFAULT_RESULT_COUNT,
 ) -> list[
     dict[str, Any]
 ]:
-    """
-    Diversity-aware reranker.
-
-    Priority order:
-    1. Strong group compatibility
-    2. Avoid recently shown movies
-    3. Genre diversity
-    4. Era diversity
-    5. Controlled randomness
-
-    It does NOT bypass whatever hard-constraint
-    filtering happened earlier in the pipeline.
-    """
-
-    if not movies:
-        return []
-
-    excluded = {
-        _safe_int(
-            movie_id
-        )
-        for movie_id
-        in (
-            excluded_movie_ids
-            or []
-        )
-        if _safe_int(
-            movie_id
-        )
-    }
-
-    # Remove accidental duplicates.
     unique_movies: list[
         dict[str, Any]
     ] = []
@@ -482,17 +414,37 @@ def diversify_movies(
             movie
         )
 
-    if not unique_movies:
+    return unique_movies
+
+
+# ---------------------------------------------------------
+# SELECTION LOGIC
+# ---------------------------------------------------------
+
+def _select_diverse_movies(
+    movies: list[
+        dict[str, Any]
+    ],
+    *,
+    limit: int,
+) -> list[
+    dict[str, Any]
+]:
+    if not movies:
         return []
 
-    unique_movies.sort(
+    movies = _deduplicate(
+        movies
+    )
+
+    movies.sort(
         key=_group_score,
         reverse=True,
     )
 
     strongest_score = (
         _group_score(
-            unique_movies[0]
+            movies[0]
         )
     )
 
@@ -501,7 +453,7 @@ def diversify_movies(
     ] = []
 
     remaining = (
-        unique_movies.copy()
+        movies.copy()
     )
 
     while (
@@ -511,9 +463,7 @@ def diversify_movies(
         ) < limit
     ):
         best_movie = None
-        best_value = (
-            -math.inf
-        )
+        best_value = -math.inf
 
         for movie in remaining:
             raw_score = (
@@ -543,13 +493,6 @@ def diversify_movies(
                 )
             )
 
-            novelty_bonus = (
-                _novelty_bonus(
-                    movie,
-                    excluded,
-                )
-            )
-
             random_bonus = (
                 _random_bonus()
             )
@@ -557,12 +500,9 @@ def diversify_movies(
             diversity_total = (
                 genre_bonus
                 + era_bonus
-                + novelty_bonus
                 + random_bonus
             )
 
-            # Diversity matters most when quality
-            # is already reasonably close.
             final_value = (
                 raw_score
                 + (
@@ -593,3 +533,133 @@ def diversify_movies(
         )
 
     return selected
+
+
+# ---------------------------------------------------------
+# MAIN DIVERSIFICATION
+# ---------------------------------------------------------
+
+def diversify_movies(
+    movies: list[
+        dict[str, Any]
+    ],
+    *,
+    excluded_movie_ids: list[int]
+    | None = None,
+    limit: int = DEFAULT_RESULT_COUNT,
+) -> list[
+    dict[str, Any]
+]:
+    """
+    Diversity-aware reranker with hard session novelty.
+
+    Behavior:
+      1. Remove duplicate movies.
+      2. Prefer only movies not already shown this session.
+      3. Select fresh movies using quality + genre + era diversity.
+      4. Only reuse previously shown movies if the fresh pool
+         is too small to fill the requested number of results.
+
+    This prevents "universal winners" such as Rear Window
+    from dominating every repeat run.
+    """
+
+    if not movies:
+        return []
+
+    excluded = {
+        _safe_int(
+            movie_id
+        )
+        for movie_id
+        in (
+            excluded_movie_ids
+            or []
+        )
+        if _safe_int(
+            movie_id
+        )
+    }
+
+    unique_movies = (
+        _deduplicate(
+            movies
+        )
+    )
+
+    # -----------------------------------------------------
+    # SPLIT INTO FRESH VS PREVIOUSLY SHOWN
+    # -----------------------------------------------------
+
+    fresh_movies: list[
+        dict[str, Any]
+    ] = []
+
+    previously_shown: list[
+        dict[str, Any]
+    ] = []
+
+    for movie in unique_movies:
+        movie_id = _movie_id(
+            movie
+        )
+
+        if (
+            movie_id
+            and movie_id
+            in excluded
+        ):
+            previously_shown.append(
+                movie
+            )
+
+        else:
+            fresh_movies.append(
+                movie
+            )
+
+    # -----------------------------------------------------
+    # SELECT FRESH MOVIES FIRST
+    # -----------------------------------------------------
+
+    selected = (
+        _select_diverse_movies(
+            fresh_movies,
+            limit=limit,
+        )
+    )
+
+    # -----------------------------------------------------
+    # FALLBACK:
+    # REUSE ONLY IF WE DON'T HAVE ENOUGH FRESH MOVIES
+    # -----------------------------------------------------
+
+    if (
+        len(
+            selected
+        ) < limit
+        and previously_shown
+    ):
+        remaining_slots = (
+            limit
+            - len(
+                selected
+            )
+        )
+
+        # Keep reuse very limited.
+        allowed_reuse = min(
+            remaining_slots,
+            FALLBACK_REUSE_LIMIT,
+        )
+
+        fallback_movies = (
+            _select_diverse_movies(
+                previously_shown,
+                limit=allowed_reuse,
+            )
+        )
+
+        selected.extend(
+            fallback_movies
+        )

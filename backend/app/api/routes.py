@@ -5,13 +5,15 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from app.services.diversity_service import diversify_movies
-from app.services.recommendation_service import generate_recommendations
+from app.services.diversity_service import (
+    diversify_movies,
+)
+
+from app.services.recommendation_service import (
+    generate_recommendations,
+)
 
 
-# IMPORTANT:
-# Do NOT add prefix="/api/v1" here.
-# app/main.py should add that prefix when it includes this router.
 router = APIRouter(
     tags=["recommendations"],
 )
@@ -21,98 +23,268 @@ router = APIRouter(
 # REQUEST MODELS
 # ---------------------------------------------------------
 
-class ParticipantRequest(BaseModel):
+class ParticipantRequest(
+    BaseModel
+):
     name: str
     preference: str
 
 
-class RecommendationRequest(BaseModel):
-    participants: list[ParticipantRequest]
+class RecommendationRequest(
+    BaseModel
+):
+    participants: list[
+        ParticipantRequest
+    ]
 
-    # Movie IDs already shown during this frontend session.
-    # The diversity system uses these to favor fresh results.
-    exclude_movie_ids: list[int] = Field(
+    exclude_movie_ids: list[
+        int
+    ] = Field(
         default_factory=list
     )
 
 
 # ---------------------------------------------------------
-# RECOMMENDATION ENDPOINT
+# EMPTY RESPONSE
 # ---------------------------------------------------------
 
-@router.post("/recommend")
+def _empty_response() -> dict[
+    str,
+    Any,
+]:
+    return {
+        "summary": "",
+        "group_profile": "",
+        "group_mood": "",
+        "shared_preferences": [],
+        "hard_constraints": [],
+        "movies": [],
+    }
+
+
+# ---------------------------------------------------------
+# RECOMMEND ENDPOINT
+# ---------------------------------------------------------
+
+@router.post(
+    "/recommend"
+)
 def recommend_movies(
-    request: RecommendationRequest,
+    request:
+        RecommendationRequest,
 ) -> dict[str, Any]:
-    """
-    Generate movie recommendations for a group and apply
-    diversity-aware reranking.
-
-    The main recommendation engine handles:
-        - natural-language preference parsing
-        - hard constraints
-        - group compatibility
-        - movie scoring
-
-    The diversity layer then encourages:
-        - different genres
-        - different release eras
-        - fresh movies across repeated runs
-        - controlled variation
-    """
 
     participants = [
         {
-            "name": participant.name,
-            "preference": participant.preference,
+            "name":
+                participant.name,
+
+            "preference":
+                participant.preference,
         }
-        for participant in request.participants
+        for participant
+        in request.participants
     ]
 
     # -----------------------------------------------------
-    # GENERATE BASE RECOMMENDATIONS
+    # BASE RECOMMENDATIONS
     # -----------------------------------------------------
 
-    response = generate_recommendations(
-        participants
+    response = (
+        generate_recommendations(
+            participants
+        )
     )
 
     # -----------------------------------------------------
     # NORMALIZE RESPONSE
     # -----------------------------------------------------
 
-    # Pydantic v2 model
-    if hasattr(response, "model_dump"):
-        response_data = response.model_dump()
+    if hasattr(
+        response,
+        "model_dump",
+    ):
+        response_data = (
+            response.model_dump()
+        )
 
-    # Plain dictionary
-    elif isinstance(response, dict):
-        response_data = response.copy()
+    elif isinstance(
+        response,
+        dict,
+    ):
+        response_data = (
+            response.copy()
+        )
 
-    # Unexpected response type:
-    # return it untouched rather than breaking the endpoint.
     else:
-        return response
+        print(
+            "[API] Unexpected "
+            "recommendation response type:",
+            type(response),
+        )
 
-    # -----------------------------------------------------
-    # APPLY DIVERSITY RERANKING
-    # -----------------------------------------------------
+        return _empty_response()
 
-    movies = response_data.get(
-        "movies",
+    response_data.setdefault(
+        "summary",
+        "",
+    )
+
+    response_data.setdefault(
+        "group_profile",
+        "",
+    )
+
+    response_data.setdefault(
+        "group_mood",
+        "",
+    )
+
+    response_data.setdefault(
+        "shared_preferences",
         [],
     )
 
-    if movies:
-        diversified_movies = diversify_movies(
-            movies,
-            excluded_movie_ids=request.exclude_movie_ids,
-            limit=min(
-                6,
-                len(movies),
-            ),
+    response_data.setdefault(
+        "hard_constraints",
+        [],
+    )
+
+    raw_movies = (
+        response_data.get(
+            "movies"
+        )
+        or []
+    )
+
+    if not isinstance(
+        raw_movies,
+        list,
+    ):
+        raw_movies = []
+
+    print(
+        "[API] Recommendation service "
+        f"returned {len(raw_movies)} movies."
+    )
+
+    # -----------------------------------------------------
+    # NOTHING FROM RECOMMENDATION ENGINE
+    # -----------------------------------------------------
+
+    if not raw_movies:
+        response_data[
+            "movies"
+        ] = []
+
+        return response_data
+
+    # -----------------------------------------------------
+    # SESSION DIVERSITY
+    # -----------------------------------------------------
+
+    try:
+        diversified_movies = (
+            diversify_movies(
+                raw_movies,
+
+                excluded_movie_ids=
+                    request.exclude_movie_ids,
+
+                limit=min(
+                    6,
+                    len(raw_movies),
+                ),
+            )
         )
 
-        response_data["movies"] = diversified_movies
+    except Exception as exc:
+        print(
+            "[API diversity] "
+            f"Diversity failed: {exc}"
+        )
+
+        diversified_movies = []
+
+    # -----------------------------------------------------
+    # CRITICAL FAILSAFE
+    #
+    # Diversity is allowed to REORDER / prefer fresh
+    # movies, but it must NEVER destroy a legitimate
+    # recommendation response.
+    # -----------------------------------------------------
+
+    if not diversified_movies:
+        print(
+            "[API diversity] "
+            "Diversity produced zero movies. "
+            "Falling back to base recommendations."
+        )
+
+        diversified_movies = (
+            raw_movies[:6]
+        )
+
+    # -----------------------------------------------------
+    # IF DIVERSITY RETURNS TOO FEW,
+    # FILL WITH UNUSED BASE MOVIES
+    # -----------------------------------------------------
+
+    if (
+        len(diversified_movies)
+        < min(
+            6,
+            len(raw_movies),
+        )
+    ):
+        selected_ids = {
+            movie.get("id")
+            for movie
+            in diversified_movies
+            if movie.get("id")
+            is not None
+        }
+
+        for movie in raw_movies:
+            if (
+                len(
+                    diversified_movies
+                )
+                >= min(
+                    6,
+                    len(raw_movies),
+                )
+            ):
+                break
+
+            movie_id = (
+                movie.get(
+                    "id"
+                )
+            )
+
+            if (
+                movie_id
+                in selected_ids
+            ):
+                continue
+
+            diversified_movies.append(
+                movie
+            )
+
+            if movie_id is not None:
+                selected_ids.add(
+                    movie_id
+                )
+
+    response_data[
+        "movies"
+    ] = diversified_movies[:6]
+
+    print(
+        "[API] Final response contains "
+        f"{len(response_data['movies'])} movies."
+    )
 
     return response_data

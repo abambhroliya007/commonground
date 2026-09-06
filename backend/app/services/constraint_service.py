@@ -1,4 +1,8 @@
+from __future__ import annotations
+
 import json
+import re
+from typing import Any
 
 from openai import OpenAI
 
@@ -10,67 +14,342 @@ client = OpenAI(
 )
 
 
+# ---------------------------------------------------------
+# HARD-CONSTRAINT CLASSIFICATION
+# ---------------------------------------------------------
+
+# These are phrases that strongly indicate a real
+# deal-breaker rather than a normal preference.
+STRICT_MARKERS = (
+    "absolutely no ",
+    "absolutely not ",
+    "must not ",
+    "cannot ",
+    "can't ",
+    "never ",
+    "no ",
+    "exclude ",
+    "avoid ",
+    "nothing with ",
+    "nothing involving ",
+    "do not ",
+    "don't ",
+    "without ",
+    "only ",
+)
+
+
+# Some parsed "hard constraints" are really just soft
+# preferences and should NEVER eliminate candidates.
+SOFT_PREFERENCE_PATTERNS = (
+    "not too slow",
+    "not slow",
+    "not stupid",
+    "not silly",
+    "not boring",
+    "not depressing",
+    "not too depressing",
+    "not too dark",
+    "not extremely dark",
+    "not bleak",
+    "not too bleak",
+    "not obvious",
+    "something different",
+    "different from",
+    "probably haven't seen",
+    "probably have not seen",
+    "critically acclaimed",
+    "highly rated",
+    "good acting",
+    "strong acting",
+    "strong characters",
+    "strong screenplay",
+    "good story",
+    "clever",
+    "intelligent",
+    "suspenseful",
+    "fast paced",
+    "fast-paced",
+    "fairly fast",
+    "entertaining",
+    "visually interesting",
+    "memorable world",
+    "original",
+    "originality",
+    "lighter",
+    "enjoyable",
+)
+
+
+# Constraints in these semantic categories are useful for
+# AI validation because they are not always represented
+# perfectly by TMDB metadata.
+SEMANTIC_DEAL_BREAKER_TERMS = (
+    "gore",
+    "torture",
+    "disturbing",
+    "supernatural",
+    "romance-focused",
+    "romance focused",
+    "romantic relationship",
+    "broad comedy",
+    "silly comedy",
+    "musical",
+    "superhero",
+    "franchise sequel",
+    "live action only",
+    "live-action only",
+    "animation",
+    "animated",
+    "extremely depressing",
+    "relentlessly bleak",
+    "extremely bleak",
+)
+
+
+def _normalize_text(
+    value: Any,
+) -> str:
+    return (
+        str(value or "")
+        .strip()
+        .lower()
+    )
+
+
+def _is_soft_preference(
+    constraint: str,
+) -> bool:
+    normalized = (
+        _normalize_text(
+            constraint
+        )
+    )
+
+    if not normalized:
+        return True
+
+    return any(
+        phrase
+        in normalized
+        for phrase
+        in SOFT_PREFERENCE_PATTERNS
+    )
+
+
+def _looks_explicit(
+    constraint: str,
+) -> bool:
+    normalized = (
+        _normalize_text(
+            constraint
+        )
+    )
+
+    return any(
+        marker
+        in normalized
+        for marker
+        in STRICT_MARKERS
+    )
+
+
+def _has_semantic_deal_breaker(
+    constraint: str,
+) -> bool:
+    normalized = (
+        _normalize_text(
+            constraint
+        )
+    )
+
+    return any(
+        term
+        in normalized
+        for term
+        in SEMANTIC_DEAL_BREAKER_TERMS
+    )
+
+
+def is_genuine_hard_constraint(
+    constraint: str,
+) -> bool:
+    """
+    Decide whether a parsed hard_constraint should
+    actually be allowed to eliminate movies.
+
+    This intentionally errs on the side of treating
+    ambiguous language as a SOFT preference.
+
+    Examples:
+
+        "not too slow"
+            -> False
+
+        "something different"
+            -> False
+
+        "critically acclaimed"
+            -> False
+
+        "Absolutely no gore"
+            -> True
+
+        "No musicals"
+            -> True
+
+        "Avoid romance-focused movies"
+            -> True
+    """
+
+    normalized = (
+        _normalize_text(
+            constraint
+        )
+    )
+
+    if not normalized:
+        return False
+
+    # Known soft-language patterns win first.
+    if _is_soft_preference(
+        normalized
+    ):
+        return False
+
+    # Strong semantic deal-breakers are allowed when the
+    # wording is explicitly exclusionary.
+    if (
+        _has_semantic_deal_breaker(
+            normalized
+        )
+        and _looks_explicit(
+            normalized
+        )
+    ):
+        return True
+
+    # Other constraints need clear exclusion language.
+    if _looks_explicit(
+        normalized
+    ):
+        return True
+
+    # Ambiguous AI-generated constraints should not become
+    # elimination rules.
+    return False
+
+
+# ---------------------------------------------------------
+# COLLECT REAL HARD CONSTRAINTS
+# ---------------------------------------------------------
+
 def collect_hard_constraints(
     parsed_preferences: list[dict],
 ) -> list[str]:
     """
-    Build a clean list of hard constraints
-    across all participants.
+    Build a clean list containing only genuine
+    semantic deal-breakers.
+
+    IMPORTANT:
+
+    Genre exclusions and runtime limits are already
+    enforced deterministically by scoring_service.py
+    and TMDB filtering.
+
+    We therefore don't need to ask the LLM validator
+    to repeatedly validate those simple fields.
+
+    The semantic validator should focus on things like:
+
+        no excessive gore
+        no torture
+        no musicals
+        no disturbing supernatural content
+        avoid romance-focused movies
+        avoid broad comedy
+
+    It should NOT enforce:
+
+        clever
+        good story
+        not too slow
+        critically acclaimed
+        something different
     """
 
-    constraints = []
+    constraints: list[str] = []
+    seen: set[str] = set()
 
-    seen = set()
-
-    for preference in parsed_preferences:
-        # Explicit genre exclusions
-        for genre in preference.get(
-            "avoid_genres",
-            [],
+    for preference in (
+        parsed_preferences
+        or []
+    ):
+        if not isinstance(
+            preference,
+            dict,
         ):
-            label = f"No {genre}"
+            continue
 
-            key = label.lower()
+        raw_constraints = (
+            preference.get(
+                "hard_constraints",
+                [],
+            )
+            or []
+        )
 
-            if key not in seen:
-                constraints.append(label)
-                seen.add(key)
-
-        # Explicit semantic constraints
-        for constraint in preference.get(
-            "hard_constraints",
-            [],
+        if not isinstance(
+            raw_constraints,
+            list,
         ):
-            label = constraint.strip()
+            raw_constraints = [
+                raw_constraints
+            ]
+
+        for constraint in (
+            raw_constraints
+        ):
+            label = str(
+                constraint
+                or ""
+            ).strip()
 
             if not label:
                 continue
 
-            key = label.lower()
+            if not is_genuine_hard_constraint(
+                label
+            ):
+                print(
+                    "[Constraint classifier] "
+                    f"Treating as SOFT preference: "
+                    f"{label}"
+                )
 
-            if key not in seen:
-                constraints.append(label)
-                seen.add(key)
+                continue
 
-        # Runtime
-        max_runtime = preference.get(
-            "max_runtime"
-        )
-
-        if max_runtime:
-            label = (
-                f"Maximum runtime "
-                f"{max_runtime} minutes"
+            key = (
+                label.lower()
             )
 
-            key = label.lower()
+            if key in seen:
+                continue
 
-            if key not in seen:
-                constraints.append(label)
-                seen.add(key)
+            constraints.append(
+                label
+            )
+
+            seen.add(
+                key
+            )
 
     return constraints
 
+
+# ---------------------------------------------------------
+# JSON CLEANING
+# ---------------------------------------------------------
 
 def clean_json_text(
     text: str,
@@ -99,24 +378,93 @@ def clean_json_text(
     ):
         text = text[:-3]
 
-    return text.strip()
+    return (
+        text.strip()
+    )
 
+
+# ---------------------------------------------------------
+# SAFE JSON PARSING
+# ---------------------------------------------------------
+
+def _parse_validator_json(
+    text: str,
+) -> dict:
+    cleaned = (
+        clean_json_text(
+            text
+        )
+    )
+
+    if not cleaned:
+        return {
+            "allowed": True,
+            "violations": [],
+            "reason":
+                (
+                    "Validator returned no result; "
+                    "candidate allowed by fallback."
+                ),
+        }
+
+    try:
+        parsed = json.loads(
+            cleaned
+        )
+
+    except json.JSONDecodeError:
+        # Occasionally an LLM may put text around JSON.
+        # Try extracting the first JSON object.
+        match = re.search(
+            r"\{.*\}",
+            cleaned,
+            flags=re.DOTALL,
+        )
+
+        if not match:
+            raise
+
+        parsed = json.loads(
+            match.group(0)
+        )
+
+    if not isinstance(
+        parsed,
+        dict,
+    ):
+        return {
+            "allowed": True,
+            "violations": [],
+            "reason":
+                (
+                    "Validator returned an unexpected "
+                    "format; candidate allowed."
+                ),
+        }
+
+    return parsed
+
+
+# ---------------------------------------------------------
+# VALIDATE ONE MOVIE
+# ---------------------------------------------------------
 
 def validate_candidate_against_constraints(
     movie: dict,
     constraints: list[str],
 ) -> dict:
     """
-    Ask the model whether a candidate
-    semantically violates any genuine
-    hard constraint.
+    Ask the model whether a candidate clearly violates
+    one of the remaining semantic deal-breakers.
 
-    Returns:
-    {
-        "allowed": bool,
-        "violations": [...],
-        "reason": "..."
-    }
+    IMPORTANT:
+    This validator does NOT decide whether the movie is
+    a good recommendation.
+
+    It only decides whether the movie is disqualified.
+
+    Preference matching happens later in the ranking
+    system.
     """
 
     if not constraints:
@@ -124,7 +472,7 @@ def validate_candidate_against_constraints(
             "allowed": True,
             "violations": [],
             "reason":
-                "No hard constraints to validate.",
+                "No semantic hard constraints to validate.",
         }
 
     movie_payload = {
@@ -158,15 +506,17 @@ def validate_candidate_against_constraints(
     }
 
     prompt = f"""
-You are a semantic constraint validator
+You are the FINAL DISQUALIFICATION CHECK
 for a group movie recommendation system.
 
-The user has expressed hard constraints.
+Your job is NOT to determine whether the movie
+is a good recommendation.
 
-Your job is to determine whether this
-candidate clearly violates any of them.
+Your job is ONLY to determine whether the movie
+CLEARLY violates one of the explicit deal-breakers
+listed below.
 
-Hard constraints:
+Explicit semantic deal-breakers:
 
 {json.dumps(constraints, indent=2)}
 
@@ -174,82 +524,144 @@ Candidate movie:
 
 {json.dumps(movie_payload, indent=2)}
 
-Important rules:
+CRITICAL RULE:
 
-1. Only reject a movie when there is a
-   clear conflict with a hard constraint.
+ALLOW THE MOVIE UNLESS THE SUPPLIED METADATA
+CLEARLY DEMONSTRATES A DEAL-BREAKER VIOLATION.
 
-2. Do not reject based on weak ambiguity.
+Do NOT require the movie to satisfy everyone's
+preferences.
 
-3. Explicit genre exclusions are strict.
+Do NOT evaluate whether it is:
+
+- clever enough
+- funny enough
+- suspenseful enough
+- interesting enough
+- critically acclaimed enough
+- fast-paced enough
+- original enough
+- unexpected enough
+- visually impressive enough
+- something the users probably haven't seen
+
+Those are ranking preferences, NOT reasons
+for rejection.
+
+Only evaluate the explicit deal-breakers supplied.
 
 Examples:
 
 Constraint:
-"No Horror"
+"No excessive gore"
 
 Movie:
-A supernatural ghost story with frightening
-themes, even if Horror is not listed in the
-genre metadata.
+An action thriller with violence but no indication
+of graphic gore in the supplied metadata.
 
 Result:
-Reject.
+ALLOW.
+
+Reason:
+Violence alone does not prove excessive gore.
+
+---
 
 Constraint:
-"Avoid overly dark tone"
+"No excessive gore"
 
-Movie:
-A serious thriller that is dark but not
-extreme.
-
-Result:
-Usually allow unless the description clearly
-indicates a very bleak, disturbing, or
-oppressive tone.
-
-Constraint:
-"Avoid romance-focused movies"
-
-Movie:
-A thriller containing a minor romantic
-subplot.
+Movie metadata:
+A graphic splatter film centered on brutal,
+gory killings.
 
 Result:
-Allow.
+REJECT.
+
+---
 
 Constraint:
 "Avoid romance-focused movies"
 
 Movie:
-The central story is a romantic relationship.
+A mystery involving a married detective.
 
 Result:
-Reject.
+ALLOW.
+
+A relationship appearing in the movie does not
+make romance the central story.
+
+---
+
+Constraint:
+"Avoid romance-focused movies"
+
+Movie:
+The supplied overview clearly describes the central
+plot as two people falling in love.
+
+Result:
+REJECT.
+
+---
 
 Constraint:
 "Avoid broad comedy"
 
 Movie:
-A serious drama with occasional humor.
+A thriller with occasional comedic moments.
 
 Result:
-Allow.
+ALLOW.
+
+---
 
 Constraint:
-"Maximum runtime 120 minutes"
+"No musicals"
 
-Movie runtime:
-135
+Movie genres:
+Drama, Music
+
+Overview:
+A musician investigates a mystery.
 
 Result:
-Reject.
+ALLOW unless the supplied metadata clearly shows
+the movie is actually a musical.
 
-4. Do not invent facts not supported by the
-   movie metadata provided.
+Music is not automatically Musical.
 
-5. If uncertain, prefer allowing the movie
-   rather than rejecting it.
+---
+
+Constraint:
+"No disturbing supernatural stuff"
+
+Movie:
+A science-fiction movie involving aliens.
+
+Result:
+ALLOW.
+
+Science fiction is not automatically supernatural.
+
+---
+
+Constraint:
+"No disturbing supernatural stuff"
+
+Movie:
+A terrifying demonic-possession story.
+
+Result:
+REJECT.
+
+---
+
+If the supplied metadata is ambiguous or incomplete:
+
+ALLOW.
+
+Never invent facts about the movie.
 
 Return ONLY valid JSON:
 
@@ -276,28 +688,41 @@ Return ONLY valid JSON:
             or ""
         )
 
-        cleaned = clean_json_text(
-            raw_text
+        parsed = (
+            _parse_validator_json(
+                raw_text
+            )
         )
 
-        if not cleaned:
-            return {
-                "allowed": True,
-                "violations": [],
-                "reason":
-                    "Validator returned no result; candidate allowed by fallback.",
-            }
-
-        parsed = json.loads(
-            cleaned
-        )
-
-        allowed = bool(
+        raw_allowed = (
             parsed.get(
                 "allowed",
                 True,
             )
         )
+
+        # Avoid bool("false") == True.
+        if isinstance(
+            raw_allowed,
+            str,
+        ):
+            allowed = (
+                raw_allowed
+                .strip()
+                .lower()
+                not in {
+                    "false",
+                    "no",
+                    "0",
+                    "reject",
+                    "rejected",
+                }
+            )
+
+        else:
+            allowed = bool(
+                raw_allowed
+            )
 
         violations = (
             parsed.get(
@@ -307,7 +732,17 @@ Return ONLY valid JSON:
             or []
         )
 
-        reason = (
+        if not isinstance(
+            violations,
+            list,
+        ):
+            violations = [
+                str(
+                    violations
+                )
+            ]
+
+        reason = str(
             parsed.get(
                 "reason",
                 "",
@@ -334,39 +769,71 @@ Return ONLY valid JSON:
             f"{error}"
         )
 
-        # Fail open.
-        # A validator problem should not
-        # crash the whole recommendation.
+        # FAIL OPEN.
+        #
+        # Recommendation quality may degrade slightly if
+        # validation fails, but the system should never
+        # eliminate valid movies or crash due to the
+        # semantic checker.
         return {
             "allowed": True,
+
             "violations": [],
+
             "reason":
-                "Validation failed; candidate allowed by fallback.",
+                (
+                    "Semantic validation failed; "
+                    "candidate allowed by fallback."
+                ),
         }
 
+
+# ---------------------------------------------------------
+# SEMANTIC FILTER
+# ---------------------------------------------------------
 
 def semantic_constraint_filter(
     movies: list[dict],
     parsed_preferences: list[dict],
 ) -> list[dict]:
     """
-    Filter a candidate list using semantic
-    hard-constraint validation.
+    Apply semantic validation ONLY to genuine
+    deal-breakers.
 
-    The movie is kept unless the validator
-    identifies a clear conflict.
+    If no genuine semantic constraints exist,
+    movies pass directly to ranking.
     """
 
-    constraints = collect_hard_constraints(
-        parsed_preferences
+    if not movies:
+        return []
+
+    constraints = (
+        collect_hard_constraints(
+            parsed_preferences
+        )
+    )
+
+    print(
+        "[Constraint validator] "
+        f"Semantic constraints: "
+        f"{constraints}"
     )
 
     if not constraints:
+        print(
+            "[Constraint validator] "
+            "No semantic deal-breakers. "
+            "Skipping semantic validation."
+        )
+
         return movies
 
-    filtered = []
+    filtered: list[
+        dict
+    ] = []
 
     for movie in movies:
+
         result = (
             validate_candidate_against_constraints(
                 movie=
@@ -381,9 +848,10 @@ def semantic_constraint_filter(
             "constraint_validation"
         ] = result
 
-        if result[
-            "allowed"
-        ]:
+        if result.get(
+            "allowed",
+            True,
+        ):
             filtered.append(
                 movie
             )
@@ -395,5 +863,11 @@ def semantic_constraint_filter(
                 f"{movie.get('title')}: "
                 f"{result.get('reason')}"
             )
+
+    print(
+        "[Constraint validator] "
+        f"{len(movies)} entered semantic validation -> "
+        f"{len(filtered)} survived."
+    )
 
     return filtered
