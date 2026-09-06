@@ -1,12 +1,12 @@
 # 🎬 CommonGround
 
-### Different tastes. One movie.
+### Different tastes. One watch.
 
-CommonGround is an AI-powered group movie recommendation engine designed to solve a familiar problem:
+CommonGround is an AI-powered **group entertainment recommendation engine** designed to solve a familiar problem:
 
 > Everyone wants to watch something — nobody can agree on what.
 
-Instead of endlessly scrolling through streaming services, each person describes what they feel like watching in natural language. CommonGround interprets those preferences, identifies shared interests and deal-breakers, searches real movie data, and recommends movies that best fit the group as a whole.
+Instead of endlessly scrolling through streaming services, each person describes what they feel like watching in natural language. CommonGround interprets those preferences, separates preferences from deal-breakers, searches real entertainment data, and recommends the movies or TV shows that best fit the group as a whole.
 
 ---
 
@@ -16,31 +16,76 @@ Traditional recommendation systems usually optimize for one person.
 
 CommonGround approaches recommendation as a **multi-user consensus problem**.
 
-Each viewer can describe their preferences naturally:
+Start by choosing what kind of room you want:
 
 ```text
-Viewer 1:
-Something clever and suspenseful, but not super dark.
-Sci-fi, mystery, crime, or a little comedy is fine.
+Movie  |  Show
+```
 
-Viewer 2:
-Nothing scary, nothing too slow, and preferably under two hours.
+Then everyone describes what they feel like watching.
 
-Viewer 3:
-Strong characters, a good story, and something different
-from the usual obvious picks.
+For example:
+
+```text
+You:
+Something suspenseful but not depressing.
+
+Friend 1:
+Funny, under two hours, and no horror.
+
+Friend 2:
+Something critically acclaimed with strong characters.
 ```
 
 CommonGround then:
 
 1. Interprets each viewer's natural-language preferences
-2. Separates preferences from hard constraints
+2. Separates soft preferences from true deal-breakers
 3. Builds a shared group profile
-4. Searches real movie candidates
-5. Evaluates each movie against every viewer
-6. Balances individual satisfaction
-7. Diversifies recommendations by genre and release era
-8. Produces a ranked group recommendation
+4. Searches real movie or TV candidates
+5. Applies deterministic hard constraints
+6. Validates nuanced semantic constraints
+7. Evaluates candidates against the entire group
+8. Ranks recommendations by group compatibility
+9. Diversifies results by genre and release era
+10. Avoids repeatedly showing the same recommendations
+
+---
+
+# 🎞️ Movie + TV Rooms
+
+CommonGround supports two recommendation modes.
+
+### Movie Room
+
+Designed for choosing a single movie for movie night.
+
+The engine considers information such as:
+
+- Genre
+- Runtime
+- Release year
+- Rating
+- Story description
+- Tone
+- Group preferences
+- Hard constraints
+
+### Show Room
+
+Designed for finding a TV series the group can get into together.
+
+TV candidates are normalized into the same recommendation pipeline while retaining show-specific information such as:
+
+- First air date
+- Episode runtime
+- Number of seasons
+- Number of episodes
+- Genres
+- Rating
+- Overview
+
+This allows both modes to use the same underlying group-consensus architecture rather than maintaining two disconnected recommendation engines.
 
 ---
 
@@ -48,116 +93,208 @@ CommonGround then:
 
 CommonGround is more than a prompt wrapped around an LLM.
 
-The backend uses a multi-stage recommendation pipeline.
+The backend uses a multi-stage recommendation pipeline:
 
 ```text
-Viewer Preferences
-        │
-        ▼
-Natural Language Parsing
-        │
-        ▼
-Individual Preference Profiles
-        │
-        ▼
-Group Preference Aggregation
-        │
-        ▼
-Hard Constraint Detection
-        │
-        ▼
-TMDB Candidate Discovery
-        │
-        ▼
-Candidate Filtering
-        │
-        ▼
-AI Group-Fit Evaluation
-        │
-        ▼
-Compatibility Scoring
-        │
-        ▼
-Diversity-Aware Reranking
-        │
-        ▼
-Final Recommendations
+                Viewer Preferences
+                        │
+                        ▼
+              Natural Language Parsing
+                        │
+                        ▼
+             Individual Taste Profiles
+                        │
+                        ▼
+            Hard vs. Soft Classification
+                        │
+                        ▼
+                Group Aggregation
+                        │
+                        ▼
+                 Room Selection
+                  ┌─────┴─────┐
+                  ▼           ▼
+               MOVIE         SHOW
+                  │           │
+                  ▼           ▼
+            TMDB Movies    TMDB TV
+                  └─────┬─────┘
+                        ▼
+             Candidate Normalization
+                        │
+                        ▼
+          Deterministic Constraint Filter
+                        │
+                        ▼
+            Semantic Constraint Check
+                        │
+                        ▼
+              AI Group-Fit Ranking
+                        │
+                        ▼
+            Diversity / Novelty Layer
+                        │
+                        ▼
+              Final Recommendations
 ```
 
 ---
 
-## 🎯 Group-Fit Intelligence
+# 🎯 Hard Constraints vs. Soft Preferences
 
-A movie is not selected simply because it matches the most keywords.
+One of the central design problems in CommonGround is understanding the difference between:
 
-CommonGround evaluates how well each candidate works for **every member of the group**.
+> what someone **would like**
 
-Each recommendation includes:
+and:
 
-- Overall group-fit score
-- Individual viewer fit scores
-- Explanation of why the movie works
-- Group-balance assessment
-- Runtime
-- Genres
-- Release year
-- TMDB rating
-
-This makes the recommendation explainable instead of simply returning a list of movie titles.
-
----
-
-## 🚫 Hard Constraints
-
-CommonGround distinguishes between preferences and deal-breakers.
+> what someone **will not accept**.
 
 For example:
 
 ```text
-"I'd prefer something funny"
+"Something funny"
 ```
 
-is treated differently from:
+is a preference.
+
+But:
 
 ```text
 "Absolutely no horror."
 ```
 
-Potential hard constraints include:
+is a deal-breaker.
 
-- No horror
-- No animation
-- No romance
-- Runtime limits
-- Live-action only
-- Genre exclusions
+Likewise:
 
-These constraints are protected during candidate selection so a movie cannot rank highly simply by satisfying other preferences while violating an important deal-breaker.
+```text
+"Something critically acclaimed"
+```
+
+should influence ranking.
+
+It should **not** automatically eliminate every movie below an arbitrary numerical rating.
+
+CommonGround therefore separates the two concepts.
+
+### Hard constraints
+
+Examples include:
+
+```text
+No horror
+Under 120 minutes
+No musicals
+No animation
+```
+
+These can eliminate candidates.
+
+### Soft preferences
+
+Examples include:
+
+```text
+Suspenseful
+Funny
+Strong characters
+Critically acclaimed
+Not too depressing
+Something different
+Good story
+```
+
+These influence ranking without unnecessarily destroying the candidate pool.
+
+This distinction became an important part of the recommendation architecture because treating every preference as mandatory quickly creates impossible intersections for groups with different tastes.
 
 ---
 
-## 🌈 Diversity-Aware Recommendations
+# 🔎 Multi-Pass Candidate Retrieval
 
-Recommendation systems can easily become repetitive.
+A group can sometimes have a narrow combination of preferences.
 
-CommonGround includes a diversity-aware reranking layer that rewards useful variation across:
+Instead of immediately returning zero recommendations, CommonGround uses a multi-pass retrieval strategy.
 
-### Genre
+```text
+PASS 1
+Targeted candidate search
+        │
+        ▼
+Enough valid candidates?
+        │
+       NO
+        ▼
+PASS 2
+Expanded targeted search
+        │
+        ▼
+Enough valid candidates?
+        │
+       NO
+        ▼
+PASS 3
+Broader discovery
+while preserving true
+hard constraints
+```
 
-Instead of returning several nearly identical thrillers, the system can explore adjacent matches such as:
+The system can broaden **soft discovery criteria** while keeping genuine deal-breakers intact.
+
+For example, broadening genre discovery does not mean ignoring:
+
+```text
+Absolutely no horror.
+```
+
+---
+
+# 🎯 Group-Fit Intelligence
+
+CommonGround does not select something simply because it matches the most keywords.
+
+Each candidate is evaluated as a potential **group compromise**.
+
+Recommendations can include:
+
+- Overall group-fit score
+- Individual viewer fit scores
+- Explanation of why the recommendation works
+- Runtime or episode runtime
+- Genres
+- Release year
+- TMDB rating
+- Poster artwork
+- Show metadata when applicable
+
+The goal is to make recommendations explainable instead of simply returning titles.
+
+---
+
+# 🌈 Diversity-Aware Recommendations
+
+A recommendation system can technically produce relevant results while still feeling repetitive.
+
+CommonGround includes a diversity-aware reranking layer designed to reduce that problem.
+
+### Genre diversity
+
+Instead of repeatedly returning nearly identical candidates, CommonGround can explore adjacent matches when they remain compatible with the group's tastes.
+
+For example:
 
 ```text
 Mystery + Thriller
-Science Fiction + Mystery
 Crime + Drama
-Comedy + Science Fiction
+Science Fiction + Mystery
+Adventure + Drama
+Comedy + Crime
 ```
 
-when those genres remain compatible with the group's preferences.
+### Timeline diversity
 
-### Timeline
-
-Candidate discovery intentionally explores multiple release eras rather than only recent popular movies.
+Candidate discovery explores multiple release eras instead of only recent popular content.
 
 ```text
 1980–1999
@@ -166,30 +303,34 @@ Candidate discovery intentionally explores multiple release eras rather than onl
 2020+
 ```
 
-### Repeat Runs
+### Session novelty
 
-CommonGround remembers movie IDs already shown during the current session.
+CommonGround tracks recommendations already shown during the current session.
 
-Running the same preferences again can therefore surface fresh recommendations instead of simply returning the exact same list.
+Running the same room again can therefore surface fresh alternatives rather than repeatedly presenting the same universal winner.
 
-Controlled randomness is applied only among legitimate candidates so variety does not come at the expense of recommendation quality.
+Previously shown recommendations are deprioritized or excluded when enough fresh candidates are available.
 
 ---
 
 # ⚡ Performance
 
-CommonGround's movie discovery layer uses concurrent TMDB requests to reduce recommendation latency.
+Candidate discovery may require information from multiple external sources and movie/show detail endpoints.
 
-Instead of retrieving detailed movie information sequentially, candidate details are fetched concurrently using Python's:
+CommonGround retrieves TMDB candidate details concurrently using Python's:
 
 ```python
 ThreadPoolExecutor
 ```
 
+This reduces the cost of retrieving detailed metadata sequentially.
+
 The candidate pipeline balances:
 
 ```text
 Recommendation quality
+        +
+Constraint safety
         +
 Candidate diversity
         +
@@ -200,47 +341,55 @@ Response time
 
 ---
 
-# 🎨 Interface
+# 🎨 Product Experience
 
-CommonGround uses a custom warm cinematic design system built specifically for the product.
+CommonGround uses a custom **warm cinematic design system**.
 
 The interface includes:
 
+- Movie / Show room selector
 - Responsive viewer cards
 - Natural-language preference inputs
-- Cinematic dark UI
-- Warm amber and espresso color system
-- Animated recommendation analysis state
+- Warm beige participant surfaces
+- Espresso and charcoal environment
+- Amber cinematic accents
+- Premium recommendation analysis state
 - Group-fit visualization
 - Ranked recommendation cards
-- Movie posters
+- Poster artwork
 - Individual viewer compatibility
 - Alternative recommendations
-- Interactive recommendation actions
+- Session-aware recommendation novelty
+- Responsive navigation
 
-The goal was to make the application feel like a polished consumer product rather than a generic AI dashboard.
+The goal is for CommonGround to feel like a consumer entertainment product rather than a generic AI dashboard.
 
 ---
 
-# 📸 Screenshots
+# 📸 CommonGround
 
-> Screenshots coming soon.
+![CommonGround Home](screenshots/home.png)
 
-Recommended repository structure:
+CommonGround lets everyone describe what they feel like watching naturally, then finds the strongest overlap across the entire group.
+
+Additional screenshots:
 
 ```text
 screenshots/
 ├── home.png
 ├── analyzing.png
-└── results.png
+├── results.png
+└── show-room.png
 ```
 
-Once screenshots are added, they can be displayed here:
+Once added:
 
 ```markdown
-![CommonGround Home](screenshots/home.png)
+![CommonGround Analysis](screenshots/analyzing.png)
 
-![CommonGround Recommendation Results](screenshots/results.png)
+![CommonGround Results](screenshots/results.png)
+
+![CommonGround Show Room](screenshots/show-room.png)
 ```
 
 ---
@@ -250,77 +399,83 @@ Once screenshots are added, they can be displayed here:
 CommonGround uses a separated frontend/backend architecture.
 
 ```text
-┌─────────────────────────────────────┐
-│              Next.js                │
-│                                     │
-│        CommonGround Frontend        │
-│                                     │
-│   React • TypeScript • Tailwind     │
-└──────────────────┬──────────────────┘
+┌──────────────────────────────────────┐
+│               Next.js                │
+│                                      │
+│        CommonGround Frontend         │
+│                                      │
+│      React • TypeScript • UI         │
+└──────────────────┬───────────────────┘
                    │
                    │ HTTP / JSON
-                   │
                    ▼
-┌─────────────────────────────────────┐
-│              FastAPI                │
-│                                     │
-│      Recommendation Backend         │
-│                                     │
-│ Preference Parsing                  │
-│ Group Consensus                     │
-│ Candidate Ranking                   │
-│ Diversity Engine                    │
-└──────────────┬──────────────┬───────┘
+┌──────────────────────────────────────┐
+│               FastAPI                │
+│                                      │
+│       Recommendation Backend         │
+│                                      │
+│ Preference Parsing                   │
+│ Constraint Classification            │
+│ Candidate Retrieval                  │
+│ Group-Fit Ranking                    │
+│ Diversity / Novelty                  │
+└──────────────┬──────────────┬────────┘
                │              │
                ▼              ▼
-          ┌─────────┐    ┌─────────┐
-          │ OpenAI  │    │  TMDB   │
-          │   API   │    │   API   │
-          └─────────┘    └─────────┘
+          ┌─────────┐    ┌──────────┐
+          │ OpenAI  │    │   TMDB   │
+          │   API   │    │ Movie/TV │
+          └─────────┘    └──────────┘
 ```
 
 ---
 
 # 🛠️ Tech Stack
 
-## Frontend
+### Frontend
 
 - Next.js
 - React
 - TypeScript
 - Tailwind CSS
 
-## Backend
+### Backend
 
 - Python
 - FastAPI
 - Pydantic
 - Uvicorn
 
-## AI
+### AI
 
 - OpenAI API
-- Structured preference extraction
-- Natural-language group analysis
-- Candidate compatibility evaluation
+- Natural-language preference extraction
+- Hard/soft preference classification
+- Semantic constraint validation
+- Multi-user compatibility ranking
+- Explainable recommendations
 
-## Movie Data
+### Entertainment Data
 
 - TMDB API
-- Movie metadata
+- Movie discovery
+- TV discovery
 - Genres
-- Runtime
+- Runtime / episode runtime
 - Ratings
 - Posters
 - Release information
+- Season and episode metadata
 
-## Engineering
+### Engineering
 
 - REST API architecture
-- Concurrent API requests
+- Concurrent external API requests
+- Multi-pass candidate retrieval
 - Environment-based secret management
 - Diversity-aware reranking
 - Session-level recommendation novelty
+- Defensive API response handling
 
 ---
 
@@ -330,18 +485,20 @@ CommonGround uses a separated frontend/backend architecture.
 commonground/
 │
 ├── backend/
-│   │
 │   ├── app/
 │   │   ├── api/
 │   │   │   └── routes.py
 │   │   │
 │   │   ├── core/
-│   │   │   └── config.py
+│   │   │   ├── config.py
+│   │   │   └── prompts.py
 │   │   │
 │   │   ├── services/
+│   │   │   ├── constraint_service.py
 │   │   │   ├── diversity_service.py
 │   │   │   ├── preference_service.py
 │   │   │   ├── recommendation_service.py
+│   │   │   ├── scoring_service.py
 │   │   │   └── tmdb_service.py
 │   │   │
 │   │   └── main.py
@@ -349,7 +506,6 @@ commonground/
 │   └── requirements.txt
 │
 ├── frontend/
-│   │
 │   ├── app/
 │   │   ├── components/
 │   │   │   ├── Header.tsx
@@ -364,6 +520,9 @@ commonground/
 │   │   └── page.tsx
 │   │
 │   └── package.json
+│
+├── screenshots/
+│   └── home.png
 │
 ├── .gitignore
 └── README.md
@@ -385,7 +544,7 @@ You will need:
 
 ---
 
-## 1. Clone the Repository
+## 1. Clone
 
 ```bash
 git clone <your-repository-url>
@@ -394,35 +553,14 @@ cd commonground
 
 ---
 
-## 2. Configure the Backend
-
-Navigate to:
+## 2. Backend Setup
 
 ```bash
 cd backend
-```
-
-Create a virtual environment:
-
-```bash
 python3 -m venv .venv
-```
-
-Activate it on macOS/Linux:
-
-```bash
 source .venv/bin/activate
-```
-
-Install dependencies:
-
-```bash
 pip install -r requirements.txt
 ```
-
----
-
-## 3. Environment Variables
 
 Create:
 
@@ -430,7 +568,7 @@ Create:
 backend/.env
 ```
 
-Add:
+Add your credentials:
 
 ```env
 OPENAI_API_KEY=your_openai_api_key
@@ -439,19 +577,15 @@ TMDB_ACCESS_TOKEN=your_tmdb_access_token
 
 Never commit this file.
 
-The repository's `.gitignore` excludes environment files and local secrets.
-
 ---
 
-## 4. Start the Backend
-
-From `/backend`:
+## 3. Start the Backend
 
 ```bash
 python -m uvicorn app.main:app --reload
 ```
 
-The API should become available at:
+Backend:
 
 ```text
 http://127.0.0.1:8000
@@ -465,29 +599,22 @@ http://127.0.0.1:8000/docs
 
 ---
 
-## 5. Configure the Frontend
+## 4. Frontend Setup
 
 Open another terminal:
 
 ```bash
 cd frontend
-```
-
-Install dependencies:
-
-```bash
 npm install
 ```
 
-Optional frontend environment configuration:
+Optional:
 
 ```env
 NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
 ```
 
----
-
-## 6. Start the Frontend
+Start Next.js:
 
 ```bash
 npm run dev
@@ -501,11 +628,65 @@ http://localhost:3000
 
 ---
 
+# 🧪 Example Movie Room
+
+### You
+
+```text
+Something suspenseful but not depressing.
+```
+
+### Friend 1
+
+```text
+Funny, under two hours, and no horror.
+```
+
+### Friend 2
+
+```text
+Something critically acclaimed with strong characters.
+```
+
+CommonGround should identify the group's overlap while keeping `no horror` and the runtime restriction separate from softer preferences such as humor, acclaim, and tone.
+
+---
+
+# 📺 Example Show Room
+
+### You
+
+```text
+Crime or mystery with a really good story.
+```
+
+### Friend 1
+
+```text
+Something exciting, but nothing scary.
+```
+
+### Friend 2
+
+```text
+Strong characters and preferably not a show with ten seasons.
+```
+
+Switch the room to:
+
+```text
+Show
+```
+
+and CommonGround searches TV candidates instead of movies while using the same group-consensus pipeline.
+
+---
+
 # 🔐 Security
 
-API credentials are stored using environment variables and are never intended to be committed to source control.
+Secrets are stored using environment variables rather than browser-side application code.
 
-Ignored files include:
+Ignored development files should include:
 
 ```text
 .env
@@ -515,82 +696,86 @@ node_modules/
 .next/
 ```
 
-The OpenAI and TMDB credentials remain on the backend rather than being exposed to browser-side application code.
+OpenAI and TMDB credentials remain on the backend.
 
 ---
 
-# 🧪 Example Test
+# 🧭 Engineering Lessons
 
-Try the following group:
+Several edge cases shaped CommonGround's architecture.
 
-### Viewer 1
+### Over-filtering
 
-```text
-Something clever and suspenseful, but not super dark.
-I'm okay with sci-fi, mystery, crime, or even a little comedy.
-```
+Early versions treated too many natural-language preferences as mandatory constraints.
 
-### Viewer 2
+For a group, this can quickly create:
 
 ```text
-Nothing scary, nothing too slow, and preferably under two hours.
+24 candidates
+      ↓
+preference filtering
+      ↓
+0 candidates
 ```
 
-### Viewer 3
+The system was redesigned to separate deterministic constraints, semantic deal-breakers, and ranking preferences.
 
-```text
-I want strong characters, a good story, and something that
-feels different from the usual obvious picks.
-```
+### Recommendation repetition
 
-CommonGround should identify the group's shared preferences, preserve the restrictions, search movie candidates, and produce a ranked set of group-compatible recommendations.
+Highly compatible universal candidates could repeatedly dominate results.
 
-Run the same group again to test recommendation novelty and diversity.
+A session-level novelty layer was introduced to encourage fresh recommendations without sacrificing relevance.
+
+### Empty candidate pools
+
+CommonGround now uses multi-pass retrieval and defensive fallbacks so diversity or ranking stages do not unnecessarily erase legitimate validated candidates.
+
+### AI output reliability
+
+Numeric and structured AI outputs are normalized before deterministic comparisons, and malformed or incomplete ranking output is handled defensively.
+
+These problems turned CommonGround from a simple recommendation prototype into a more structured recommendation system.
 
 ---
 
 # 🗺️ Roadmap
 
-Potential future improvements include:
+Potential future improvements:
 
 - Streaming-provider availability
-- Persistent movie-night rooms
+- Streaming-service filtering
+- Persistent movie/show rooms
 - Shareable group links
 - User accounts
 - Saved taste profiles
 - Recommendation history
 - Collaborative voting
-- More advanced diversity optimization
-- Improved recommendation latency
-- Streaming-service filtering
+- Season-count preferences
+- Episode-length preferences
 - Watchlists
+- Improved latency
+- Personalized recommendation memory
 - Mobile-first experience
 
 ---
 
 # 💡 Why I Built It
 
-Choosing a movie with multiple people sounds simple until everyone has different preferences.
+Choosing something to watch with multiple people sounds simple until everyone has different preferences.
 
 Most recommendation systems answer:
 
-> "What would this person like?"
+> **What would this person like?**
 
-CommonGround explores a different question:
+CommonGround asks:
 
-> **"What is the strongest choice for this group?"**
+> **What is the strongest choice for this group?**
 
-The project combines natural-language understanding, recommendation systems, external movie data, multi-user preference balancing, constraint handling, and product-focused frontend engineering into one application.
-
----
-
-# 📄 License
-
-This project is currently provided for portfolio and educational purposes.
+The project combines natural-language understanding, multi-user recommendation, external entertainment data, constraint handling, ranking, diversity, and full-stack product engineering into one system.
 
 ---
 
 <p align="center">
   <strong>CommonGround</strong><br />
-  Different tastes. One movie.
+  Different tastes. One watch.
 </p>
