@@ -2,17 +2,31 @@ from __future__ import annotations
 
 import os
 import random
+
 from concurrent.futures import (
     ThreadPoolExecutor,
     as_completed,
 )
-from typing import Any
+
+from typing import (
+    Any,
+    Literal,
+)
 
 import requests
-from dotenv import load_dotenv
+
+from dotenv import (
+    load_dotenv,
+)
 
 
 load_dotenv()
+
+
+ContentType = Literal[
+    "movie",
+    "show",
+]
 
 
 TMDB_BASE_URL = (
@@ -29,52 +43,255 @@ TMDB_ACCESS_TOKEN = os.getenv(
 
 
 # ---------------------------------------------------------
-# GENRES
+# MOVIE GENRES
 # ---------------------------------------------------------
 
-GENRE_MAP = {
-    "action": 28,
-    "adventure": 12,
-    "animation": 16,
-    "comedy": 35,
-    "crime": 80,
-    "documentary": 99,
-    "drama": 18,
-    "family": 10751,
-    "fantasy": 14,
-    "history": 36,
-    "horror": 27,
-    "music": 10402,
-    "mystery": 9648,
-    "romance": 10749,
-    "science fiction": 878,
-    "sci-fi": 878,
-    "science-fiction": 878,
-    "tv movie": 10770,
-    "thriller": 53,
-    "war": 10752,
-    "western": 37,
+MOVIE_GENRE_MAP = {
+    "action":
+        28,
+
+    "adventure":
+        12,
+
+    "animation":
+        16,
+
+    "comedy":
+        35,
+
+    "crime":
+        80,
+
+    "documentary":
+        99,
+
+    "drama":
+        18,
+
+    "family":
+        10751,
+
+    "fantasy":
+        14,
+
+    "history":
+        36,
+
+    "horror":
+        27,
+
+    "music":
+        10402,
+
+    "mystery":
+        9648,
+
+    "romance":
+        10749,
+
+    "science fiction":
+        878,
+
+    "sci-fi":
+        878,
+
+    "science-fiction":
+        878,
+
+    "thriller":
+        53,
+
+    "war":
+        10752,
+
+    "western":
+        37,
 }
 
 
-GENRE_ID_TO_NAME = {
-    genre_id:
-        genre_name.title()
-    for (
-        genre_name,
-        genre_id,
-    )
-    in GENRE_MAP.items()
+# ---------------------------------------------------------
+# TV GENRES
+# ---------------------------------------------------------
+
+TV_GENRE_MAP = {
+    "action":
+        10759,
+
+    "adventure":
+        10759,
+
+    "action & adventure":
+        10759,
+
+    "animation":
+        16,
+
+    "comedy":
+        35,
+
+    "crime":
+        80,
+
+    "documentary":
+        99,
+
+    "drama":
+        18,
+
+    "family":
+        10751,
+
+    "kids":
+        10762,
+
+    "mystery":
+        9648,
+
+    "news":
+        10763,
+
+    "reality":
+        10764,
+
+    "science fiction":
+        10765,
+
+    "sci-fi":
+        10765,
+
+    "fantasy":
+        10765,
+
+    "sci-fi & fantasy":
+        10765,
+
+    "soap":
+        10766,
+
+    "talk":
+        10767,
+
+    "war":
+        10768,
+
+    "politics":
+        10768,
+
+    "war & politics":
+        10768,
+
+    "western":
+        37,
 }
 
-GENRE_ID_TO_NAME[878] = (
-    "Science Fiction"
-)
+
+MOVIE_GENRE_NAMES = {
+    28:
+        "Action",
+
+    12:
+        "Adventure",
+
+    16:
+        "Animation",
+
+    35:
+        "Comedy",
+
+    80:
+        "Crime",
+
+    99:
+        "Documentary",
+
+    18:
+        "Drama",
+
+    10751:
+        "Family",
+
+    14:
+        "Fantasy",
+
+    36:
+        "History",
+
+    27:
+        "Horror",
+
+    10402:
+        "Music",
+
+    9648:
+        "Mystery",
+
+    10749:
+        "Romance",
+
+    878:
+        "Science Fiction",
+
+    53:
+        "Thriller",
+
+    10752:
+        "War",
+
+    37:
+        "Western",
+}
 
 
-# ---------------------------------------------------------
-# DISCOVERY CONFIGURATION
-# ---------------------------------------------------------
+TV_GENRE_NAMES = {
+    10759:
+        "Action & Adventure",
+
+    16:
+        "Animation",
+
+    35:
+        "Comedy",
+
+    80:
+        "Crime",
+
+    99:
+        "Documentary",
+
+    18:
+        "Drama",
+
+    10751:
+        "Family",
+
+    10762:
+        "Kids",
+
+    9648:
+        "Mystery",
+
+    10763:
+        "News",
+
+    10764:
+        "Reality",
+
+    10765:
+        "Sci-Fi & Fantasy",
+
+    10766:
+        "Soap",
+
+    10767:
+        "Talk",
+
+    10768:
+        "War & Politics",
+
+    37:
+        "Western",
+}
+
 
 SORT_STRATEGIES = [
     "popularity.desc",
@@ -84,10 +301,25 @@ SORT_STRATEGIES = [
 
 
 ERA_RANGES = [
-    (1980, 1999),
-    (2000, 2009),
-    (2010, 2019),
-    (2020, 2026),
+    (
+        1980,
+        1999,
+    ),
+
+    (
+        2000,
+        2009,
+    ),
+
+    (
+        2010,
+        2019,
+    ),
+
+    (
+        2020,
+        2026,
+    ),
 ]
 
 
@@ -104,7 +336,9 @@ def _headers() -> dict[
             "application/json",
     }
 
-    if TMDB_ACCESS_TOKEN:
+    if (
+        TMDB_ACCESS_TOKEN
+    ):
         headers[
             "Authorization"
         ] = (
@@ -119,13 +353,17 @@ def _auth_params() -> dict[
     str,
     str,
 ]:
-    if TMDB_ACCESS_TOKEN:
+    if (
+        TMDB_ACCESS_TOKEN
+    ):
         return {}
 
-    if TMDB_API_KEY:
+    if (
+        TMDB_API_KEY
+    ):
         return {
             "api_key":
-                TMDB_API_KEY,
+                TMDB_API_KEY
         }
 
     raise RuntimeError(
@@ -136,34 +374,47 @@ def _auth_params() -> dict[
 
 
 # ---------------------------------------------------------
-# BASE REQUEST
+# REQUEST
 # ---------------------------------------------------------
 
 def _get(
     path: str,
+
     *,
-    params: dict[
-        str,
-        Any,
-    ]
-    | None = None,
+
+    params:
+        dict[
+            str,
+            Any,
+        ]
+        | None = None,
 ) -> dict[
     str,
     Any,
 ]:
+
     request_params = {
         **_auth_params(),
+
         **(
             params
             or {}
         ),
     }
 
-    response = requests.get(
-        f"{TMDB_BASE_URL}{path}",
-        params=request_params,
-        headers=_headers(),
-        timeout=10,
+    response = (
+        requests.get(
+            f"{TMDB_BASE_URL}{path}",
+
+            params=
+                request_params,
+
+            headers=
+                _headers(),
+
+            timeout=
+                10,
+        )
     )
 
     response.raise_for_status()
@@ -172,27 +423,42 @@ def _get(
 
 
 # ---------------------------------------------------------
-# GENRE HELPERS
+# GENRES
 # ---------------------------------------------------------
 
 def genre_names_to_ids(
-    genres: list[str]
-    | None,
+    genres:
+        list[str]
+        | None,
+
+    content_type:
+        ContentType,
 ) -> list[int]:
+
     if not genres:
         return []
 
-    ids: list[int] = []
+    genre_map = (
+        MOVIE_GENRE_MAP
+        if content_type ==
+        "movie"
+        else
+        TV_GENRE_MAP
+    )
+
+    ids = []
 
     for genre in genres:
         normalized = (
-            genre
+            str(
+                genre
+            )
             .strip()
             .lower()
         )
 
         genre_id = (
-            GENRE_MAP.get(
+            genre_map.get(
                 normalized
             )
         )
@@ -210,17 +476,31 @@ def genre_names_to_ids(
 
 
 def genre_ids_to_names(
-    ids: list[int]
-    | None,
+    ids:
+        list[int]
+        | None,
+
+    content_type:
+        ContentType,
 ) -> list[str]:
+
     if not ids:
         return []
 
+    genre_map = (
+        MOVIE_GENRE_NAMES
+        if content_type ==
+        "movie"
+        else
+        TV_GENRE_NAMES
+    )
+
     return [
-        GENRE_ID_TO_NAME.get(
+        genre_map.get(
             genre_id,
             f"Genre {genre_id}",
         )
+
         for genre_id
         in ids
     ]
@@ -230,37 +510,59 @@ def genre_ids_to_names(
 # DISCOVERY
 # ---------------------------------------------------------
 
-def discover_movies(
+def discover_content(
     *,
-    preferred_genres: list[str]
-    | None = None,
-    avoid_genres: list[str]
-    | None = None,
-    max_runtime: int
-    | None = None,
-    page: int
-    | None = None,
-    sort_by: str
-    | None = None,
-    release_year_min: int
-    | None = None,
-    release_year_max: int
-    | None = None,
+
+    content_type:
+        ContentType,
+
+    preferred_genres:
+        list[str]
+        | None = None,
+
+    avoid_genres:
+        list[str]
+        | None = None,
+
+    max_runtime:
+        int
+        | None = None,
+
+    page:
+        int
+        | None = None,
+
+    sort_by:
+        str
+        | None = None,
+
+    release_year_min:
+        int
+        | None = None,
+
+    release_year_max:
+        int
+        | None = None,
 ) -> list[
     dict[
         str,
         Any,
     ]
 ]:
+
     preferred_ids = (
         genre_names_to_ids(
-            preferred_genres
+            preferred_genres,
+
+            content_type,
         )
     )
 
     avoid_ids = (
         genre_names_to_ids(
-            avoid_genres
+            avoid_genres,
+
+            content_type,
         )
     )
 
@@ -274,91 +576,128 @@ def discover_movies(
         "include_adult":
             "false",
 
-        "include_video":
-            "false",
-
         "sort_by":
-            (
-                sort_by
-                or random.choice(
-                    SORT_STRATEGIES
-                )
+            sort_by
+            or random.choice(
+                SORT_STRATEGIES
             ),
 
-        # Enough votes to avoid junk,
-        # but low enough to include
-        # older and less obvious films.
         "vote_count.gte":
             100,
 
         "page":
-            (
-                page
-                or random.randint(
-                    1,
-                    3,
-                )
+            page
+            or random.randint(
+                1,
+                3,
             ),
     }
 
-    if preferred_ids:
-        # "|" means OR.
-        #
-        # Example:
-        # mystery OR sci-fi OR thriller
-        #
-        # This gives us more genre variety
-        # than requiring every genre at once.
+    if (
+        content_type ==
+        "movie"
+    ):
+        params[
+            "include_video"
+        ] = "false"
+
+    if (
+        preferred_ids
+    ):
         params[
             "with_genres"
         ] = "|".join(
             str(
                 genre_id
             )
+
             for genre_id
             in preferred_ids
         )
 
-    if avoid_ids:
+    if (
+        avoid_ids
+    ):
         params[
             "without_genres"
         ] = ",".join(
             str(
                 genre_id
             )
+
             for genre_id
             in avoid_ids
         )
 
-    if max_runtime:
+    if (
+        max_runtime
+    ):
         params[
             "with_runtime.lte"
         ] = max_runtime
 
-    if release_year_min:
-        params[
+    if (
+        content_type ==
+        "movie"
+    ):
+        min_date_key = (
             "primary_release_date.gte"
+        )
+
+        max_date_key = (
+            "primary_release_date.lte"
+        )
+
+        endpoint = (
+            "/discover/movie"
+        )
+
+    else:
+        min_date_key = (
+            "first_air_date.gte"
+        )
+
+        max_date_key = (
+            "first_air_date.lte"
+        )
+
+        endpoint = (
+            "/discover/tv"
+        )
+
+    if (
+        release_year_min
+    ):
+        params[
+            min_date_key
         ] = (
             f"{release_year_min}"
             "-01-01"
         )
 
-    if release_year_max:
+    if (
+        release_year_max
+    ):
         params[
-            "primary_release_date.lte"
+            max_date_key
         ] = (
             f"{release_year_max}"
             "-12-31"
         )
 
     data = _get(
-        "/discover/movie",
-        params=params,
+        endpoint,
+
+        params=
+            params,
     )
 
-    return data.get(
-        "results",
-        [],
+    return (
+        data.get(
+            "results",
+            [],
+        )
+        or []
     )
 
 
@@ -366,14 +705,28 @@ def discover_movies(
 # DETAILS
 # ---------------------------------------------------------
 
-def get_movie_details(
-    movie_id: int,
+def get_content_details(
+    content_id:
+        int,
+
+    content_type:
+        ContentType,
 ) -> dict[
     str,
     Any,
 ]:
+
+    endpoint = (
+        f"/movie/{content_id}"
+        if content_type ==
+        "movie"
+        else
+        f"/tv/{content_id}"
+    )
+
     return _get(
-        f"/movie/{movie_id}",
+        endpoint,
+
         params={
             "language":
                 "en-US",
@@ -382,31 +735,42 @@ def get_movie_details(
 
 
 # ---------------------------------------------------------
-# NORMALIZATION
+# NORMALIZE
 # ---------------------------------------------------------
 
-def _normalize_movie(
-    raw: dict[
-        str,
-        Any,
-    ],
+def _normalize_content(
+    raw:
+        dict[
+            str,
+            Any,
+        ],
+
+    content_type:
+        ContentType,
 ) -> dict[
     str,
     Any,
 ]:
-    movie_id = raw.get(
-        "id"
+
+    content_id = (
+        raw.get(
+            "id"
+        )
     )
 
-    if not movie_id:
+    if (
+        not content_id
+    ):
         return raw
 
     try:
         details = (
-            get_movie_details(
+            get_content_details(
                 int(
-                    movie_id
-                )
+                    content_id
+                ),
+
+                content_type,
             )
         )
 
@@ -421,9 +785,8 @@ def _normalize_movie(
         **details,
     }
 
-    # -----------------------------------------------------
+
     # GENRES
-    # -----------------------------------------------------
 
     if (
         isinstance(
@@ -447,10 +810,12 @@ def _normalize_movie(
                 "name",
                 "",
             )
+
             for genre
             in merged[
                 "genres"
             ]
+
             if genre.get(
                 "name"
             )
@@ -462,20 +827,103 @@ def _normalize_movie(
                 raw.get(
                     "genre_ids",
                     [],
-                )
+                ),
+
+                content_type,
             )
         )
 
-    # -----------------------------------------------------
-    # RELEASE YEAR
-    # -----------------------------------------------------
 
-    release_date = (
-        merged.get(
-            "release_date"
+    # MOVIE
+
+    if (
+        content_type ==
+        "movie"
+    ):
+        title = (
+            merged.get(
+                "title"
+            )
+            or merged.get(
+                "original_title"
+            )
+            or "Untitled"
         )
-        or ""
-    )
+
+        release_date = (
+            merged.get(
+                "release_date"
+            )
+            or ""
+        )
+
+        runtime = (
+            merged.get(
+                "runtime"
+            )
+        )
+
+        number_of_seasons = (
+            None
+        )
+
+        number_of_episodes = (
+            None
+        )
+
+
+    # SHOW
+
+    else:
+        title = (
+            merged.get(
+                "name"
+            )
+            or merged.get(
+                "original_name"
+            )
+            or "Untitled"
+        )
+
+        release_date = (
+            merged.get(
+                "first_air_date"
+            )
+            or ""
+        )
+
+        episode_runtime = (
+            merged.get(
+                "episode_run_time"
+            )
+            or []
+        )
+
+        runtime = (
+            episode_runtime[0]
+            if (
+                isinstance(
+                    episode_runtime,
+                    list,
+                )
+                and episode_runtime
+            )
+            else
+            None
+        )
+
+        number_of_seasons = (
+            merged.get(
+                "number_of_seasons"
+            )
+        )
+
+        number_of_episodes = (
+            merged.get(
+                "number_of_episodes"
+            )
+        )
+
 
     release_year = None
 
@@ -489,70 +937,117 @@ def _normalize_movie(
         ) >= 4
     ):
         try:
-            release_year = int(
-                release_date[
-                    :4
-                ]
+            release_year = (
+                int(
+                    release_date[
+                        :4
+                    ]
+                )
             )
 
         except ValueError:
-            release_year = None
+            release_year = (
+                None
+            )
+
 
     return {
         **merged,
 
-        "genres":
-            genres,
+        "id":
+            int(
+                content_id
+            ),
+
+        "title":
+            title,
+
+        "content_type":
+            content_type,
+
+        "release_date":
+            release_date,
 
         "release_year":
             release_year,
 
         "runtime":
+            runtime,
+
+        "genres":
+            genres,
+
+        "poster_path":
             merged.get(
-                "runtime"
+                "poster_path"
             ),
+
+        "overview":
+            merged.get(
+                "overview",
+                "",
+            ),
+
+        "vote_average":
+            merged.get(
+                "vote_average",
+                0,
+            ),
+
+        "vote_count":
+            merged.get(
+                "vote_count",
+                0,
+            ),
+
+        "number_of_seasons":
+            number_of_seasons,
+
+        "number_of_episodes":
+            number_of_episodes,
     }
 
 
 # ---------------------------------------------------------
-# DEDUPLICATION
+# DEDUPLICATE
 # ---------------------------------------------------------
 
-def _deduplicate_movies(
-    movies: list[
-        dict[
-            str,
-            Any,
-        ]
-    ],
+def _deduplicate(
+    items:
+        list[
+            dict[
+                str,
+                Any,
+            ]
+        ],
 ) -> list[
     dict[
         str,
         Any,
     ]
 ]:
-    unique: list[
-        dict[
-            str,
-            Any,
-        ]
-    ] = []
 
-    seen_ids: set[int] = (
-        set()
-    )
+    unique = []
 
-    for movie in movies:
-        movie_id = movie.get(
-            "id"
+    seen_ids = set()
+
+    for item in items:
+        content_id = (
+            item.get(
+                "id"
+            )
         )
 
-        if not movie_id:
+        if (
+            not content_id
+        ):
             continue
 
         try:
-            normalized_id = int(
-                movie_id
+            content_id = (
+                int(
+                    content_id
+                )
             )
 
         except (
@@ -562,125 +1057,122 @@ def _deduplicate_movies(
             continue
 
         if (
-            normalized_id
+            content_id
             in seen_ids
         ):
             continue
 
         seen_ids.add(
-            normalized_id
+            content_id
         )
 
         unique.append(
-            movie
+            item
         )
 
     return unique
 
 
 # ---------------------------------------------------------
-# FAST CONCURRENT DETAIL FETCH
+# PARALLEL DETAILS
 # ---------------------------------------------------------
 
-def _fetch_movie_details_concurrently(
-    movies: list[
-        dict[
-            str,
-            Any,
-        ]
-    ],
-    *,
-    max_workers: int = 8,
+def _fetch_details(
+    items:
+        list[
+            dict[
+                str,
+                Any,
+            ]
+        ],
+
+    content_type:
+        ContentType,
+
+    max_workers:
+        int = 8,
 ) -> list[
     dict[
         str,
         Any,
     ]
 ]:
-    if not movies:
+
+    if not items:
         return []
 
-    normalized: list[
-        dict[
-            str,
-            Any,
-        ]
-    ] = []
+    normalized = []
 
     with ThreadPoolExecutor(
-        max_workers=max_workers
+        max_workers=
+            max_workers
     ) as executor:
-        future_map = {
-            executor.submit(
-                _normalize_movie,
-                movie,
-            ):
-                movie
 
-            for movie
-            in movies
+        futures = {
+            executor.submit(
+                _normalize_content,
+
+                item,
+
+                content_type,
+            ):
+                item
+
+            for item
+            in items
         }
 
-        for future in as_completed(
-            future_map
+        for future in (
+            as_completed(
+                futures
+            )
         ):
             try:
                 normalized.append(
                     future.result()
                 )
 
-            except Exception:
-                # One broken TMDB movie
-                # should not fail the
-                # entire recommendation.
-                continue
+            except Exception as exc:
+                print(
+                    "[TMDB details] "
+                    f"Failed: {exc}"
+                )
 
     return normalized
 
 
 # ---------------------------------------------------------
-# CANDIDATE POOL
+# PUBLIC CANDIDATE SEARCH
 # ---------------------------------------------------------
 
 def get_candidate_movies(
     *,
-    preferred_genres: list[str]
-    | None = None,
-    avoid_genres: list[str]
-    | None = None,
-    max_runtime: int
-    | None = None,
-    limit: int = 28,
+
+    content_type:
+        ContentType = "movie",
+
+    preferred_genres:
+        list[str]
+        | None = None,
+
+    avoid_genres:
+        list[str]
+        | None = None,
+
+    max_runtime:
+        int
+        | None = None,
+
+    limit:
+        int = 28,
 ) -> list[
     dict[
         str,
         Any,
     ]
 ]:
-    """
-    Build a diverse but fast candidate pool.
 
-    Goals:
-        - maintain genre diversity
-        - maintain timeline diversity
-        - change results between runs
-        - avoid excessive TMDB requests
-        - keep response time reasonable
-
-    Typical output:
-        ~20-28 enriched movie candidates
-    """
-
-    raw_candidates: list[
-        dict[
-            str,
-            Any,
-        ]
-    ] = []
-
-    # -----------------------------------------------------
-    # 1. GENERAL DISCOVERY
-    # -----------------------------------------------------
+    raw_candidates = []
 
     strategies = (
         SORT_STRATEGIES.copy()
@@ -690,14 +1182,18 @@ def get_candidate_movies(
         strategies
     )
 
-    # Only TWO general searches.
-    #
-    # Previous version did more,
-    # which increased latency.
-    for sort_by in strategies[:2]:
+
+    # GENERAL SEARCH
+
+    for sort_by in (
+        strategies[:2]
+    ):
         try:
-            movies = (
-                discover_movies(
+            results = (
+                discover_content(
+                    content_type=
+                        content_type,
+
                     preferred_genres=
                         preferred_genres,
 
@@ -719,37 +1215,38 @@ def get_candidate_movies(
             )
 
             raw_candidates.extend(
-                movies[:14]
+                results[:14]
             )
 
-        except (
-            requests.RequestException
-        ):
-            continue
+        except requests.RequestException as exc:
+            print(
+                "[TMDB discovery] "
+                f"General search failed: {exc}"
+            )
 
-    # -----------------------------------------------------
-    # 2. TIMELINE DIVERSITY
-    # -----------------------------------------------------
 
-    era_ranges = (
+    # ERA SEARCH
+
+    eras = (
         ERA_RANGES.copy()
     )
 
     random.shuffle(
-        era_ranges
+        eras
     )
 
-    # Use THREE out of four era buckets.
-    #
-    # This creates year variety but saves
-    # one whole TMDB request each run.
     for (
         start_year,
         end_year,
-    ) in era_ranges[:3]:
+    ) in (
+        eras[:3]
+    ):
         try:
-            movies = (
-                discover_movies(
+            results = (
+                discover_content(
+                    content_type=
+                        content_type,
+
                     preferred_genres=
                         preferred_genres,
 
@@ -759,7 +1256,8 @@ def get_candidate_movies(
                     max_runtime=
                         max_runtime,
 
-                    page=1,
+                    page=
+                        1,
 
                     sort_by=
                         random.choice(
@@ -778,192 +1276,174 @@ def get_candidate_movies(
             )
 
             random.shuffle(
-                movies
+                results
             )
 
-            # Only keep a few from
-            # each decade bucket.
             raw_candidates.extend(
-                movies[:5]
+                results[:5]
             )
 
-        except (
-            requests.RequestException
-        ):
-            continue
+        except requests.RequestException as exc:
+            print(
+                "[TMDB discovery] "
+                f"Era search failed: {exc}"
+            )
 
-    # -----------------------------------------------------
-    # 3. DEDUPLICATE
-    # -----------------------------------------------------
 
     unique = (
-        _deduplicate_movies(
+        _deduplicate(
             raw_candidates
         )
     )
 
-    # Randomize before trimming so
-    # repeated prompts do not always
-    # feed the exact same movies
-    # downstream.
     random.shuffle(
         unique
     )
 
-    # -----------------------------------------------------
-    # 4. QUALITY-AWARE PRESELECTION
-    # -----------------------------------------------------
 
-    # We still want some popular /
-    # well-rated movies represented.
-    #
-    # Half are chosen randomly.
-    # Half favor quality.
-    quality_sorted = sorted(
-        unique,
-        key=lambda movie: (
-            float(
-                movie.get(
-                    "vote_average",
-                    0,
-                )
-                or 0
-            )
-            * 0.65
-        )
-        + (
-            min(
+    # QUALITY ORDER
+
+    quality_sorted = (
+        sorted(
+            unique,
+
+            key=lambda item: (
                 float(
-                    movie.get(
-                        "vote_count",
+                    item.get(
+                        "vote_average",
                         0,
                     )
                     or 0
-                ),
-                5000,
+                )
+                * 0.65
             )
-            / 5000
-            * 3.5
-        ),
-        reverse=True,
+            +
+            (
+                min(
+                    float(
+                        item.get(
+                            "vote_count",
+                            0,
+                        )
+                        or 0
+                    ),
+
+                    5000,
+                )
+                / 5000
+                * 3.5
+            ),
+
+            reverse=True,
+        )
     )
+
 
     quality_target = (
         max(
             8,
+
             limit // 2,
         )
     )
 
-    selected: list[
-        dict[
-            str,
-            Any,
+    selected = []
+
+    selected_ids = set()
+
+
+    for item in (
+        quality_sorted[
+            :quality_target
         ]
-    ] = []
-
-    selected_ids: set[int] = (
-        set()
-    )
-
-    # -----------------------------------------------------
-    # QUALITY HALF
-    # -----------------------------------------------------
-
-    for movie in quality_sorted[
-        :quality_target
-    ]:
-        movie_id = movie.get(
-            "id"
-        )
-
-        if not movie_id:
-            continue
-
-        movie_id = int(
-            movie_id
+    ):
+        item_id = (
+            item.get(
+                "id"
+            )
         )
 
         if (
-            movie_id
+            not item_id
+        ):
+            continue
+
+        item_id = int(
+            item_id
+        )
+
+        if (
+            item_id
             in selected_ids
         ):
             continue
 
         selected_ids.add(
-            movie_id
+            item_id
         )
 
         selected.append(
-            movie
+            item
         )
 
-    # -----------------------------------------------------
-    # RANDOM / DIVERSE HALF
-    # -----------------------------------------------------
 
-    shuffled_unique = (
+    shuffled = (
         unique.copy()
     )
 
     random.shuffle(
-        shuffled_unique
+        shuffled
     )
 
-    for movie in shuffled_unique:
+    for item in shuffled:
         if (
             len(
                 selected
-            )
-            >= limit
+            ) >=
+            limit
         ):
             break
 
-        movie_id = movie.get(
-            "id"
-        )
-
-        if not movie_id:
-            continue
-
-        movie_id = int(
-            movie_id
+        item_id = (
+            item.get(
+                "id"
+            )
         )
 
         if (
-            movie_id
+            not item_id
+        ):
+            continue
+
+        item_id = (
+            int(
+                item_id
+            )
+        )
+
+        if (
+            item_id
             in selected_ids
         ):
             continue
 
         selected_ids.add(
-            movie_id
+            item_id
         )
 
         selected.append(
-            movie
+            item
         )
 
-    # -----------------------------------------------------
-    # 5. FETCH DETAILS IN PARALLEL
-    # -----------------------------------------------------
 
     normalized = (
-        _fetch_movie_details_concurrently(
+        _fetch_details(
             selected,
-            max_workers=8,
+
+            content_type,
         )
     )
 
-    # -----------------------------------------------------
-    # 6. FINAL SHUFFLE
-    # -----------------------------------------------------
-
-    # Recommendation service handles
-    # the actual scoring.
-    #
-    # We do not want ordering from TMDB
-    # to accidentally bias it.
     random.shuffle(
         normalized
     )

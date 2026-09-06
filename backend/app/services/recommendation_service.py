@@ -1,9 +1,18 @@
 import json
-from typing import Any
 
-from openai import OpenAI
+from typing import (
+    Any,
+    Literal,
+)
 
-from app.core.config import settings
+from openai import (
+    OpenAI,
+)
+
+from app.core.config import (
+    settings,
+)
+
 from app.core.prompts import (
     RANKING_SYSTEM_PROMPT,
 )
@@ -26,20 +35,33 @@ from app.services.constraint_service import (
 
 
 client = OpenAI(
-    api_key=settings.openai_api_key
+    api_key=
+        settings.openai_api_key
 )
 
 
+ContentType = Literal[
+    "movie",
+    "show",
+]
+
+
 # ---------------------------------------------------------
-# SAFE CONVERSION HELPERS
+# SAFE CONVERSIONS
 # ---------------------------------------------------------
 
 def safe_float(
-    value: Any,
-    default: float = 0.0,
+    value:
+        Any,
+
+    default:
+        float = 0.0,
 ) -> float:
+
     try:
-        return float(value)
+        return float(
+            value
+        )
 
     except (
         TypeError,
@@ -49,12 +71,18 @@ def safe_float(
 
 
 def safe_int(
-    value: Any,
-    default: int = 0,
+    value:
+        Any,
+
+    default:
+        int = 0,
 ) -> int:
+
     try:
         return int(
-            float(value)
+            float(
+                value
+            )
         )
 
     except (
@@ -65,17 +93,20 @@ def safe_int(
 
 
 # ---------------------------------------------------------
-# AGGREGATE SEARCH CONSTRAINTS
+# SEARCH CONSTRAINTS
 # ---------------------------------------------------------
 
 def aggregate_search_constraints(
     preferences,
 ):
     preferred_genres = []
+
     avoid_genres = []
+
     runtime_limits = []
 
     for preference in preferences:
+
         preferred_genres.extend(
             preference.get(
                 "preferred_genres",
@@ -92,23 +123,23 @@ def aggregate_search_constraints(
             or []
         )
 
-        max_runtime = (
+        runtime = (
             preference.get(
                 "max_runtime"
             )
         )
 
-        if max_runtime:
-            parsed_runtime = (
+        if runtime:
+            value = (
                 safe_int(
-                    max_runtime,
+                    runtime,
                     0,
                 )
             )
 
-            if parsed_runtime > 0:
+            if value > 0:
                 runtime_limits.append(
-                    parsed_runtime
+                    value
                 )
 
     preferred_genres = list(
@@ -124,8 +155,12 @@ def aggregate_search_constraints(
     )
 
     max_runtime = (
-        min(runtime_limits)
+        min(
+            runtime_limits
+        )
+
         if runtime_limits
+
         else None
     )
 
@@ -137,19 +172,24 @@ def aggregate_search_constraints(
 
 
 # ---------------------------------------------------------
-# FALLBACK GROUP INSIGHTS
+# FALLBACK INSIGHTS
 # ---------------------------------------------------------
 
 def build_fallback_group_insights(
-    parsed_preferences: list[dict],
+    parsed_preferences:
+        list[dict],
 ):
     shared_preferences = []
+
     hard_constraints = []
 
     seen_preferences = set()
+
     seen_constraints = set()
 
-    for preference in parsed_preferences:
+    for preference in (
+        parsed_preferences
+    ):
 
         for genre in (
             preference.get(
@@ -174,6 +214,7 @@ def build_fallback_group_insights(
                 seen_preferences.add(
                     label.lower()
                 )
+
 
         for mood in (
             preference.get(
@@ -199,6 +240,7 @@ def build_fallback_group_insights(
                     label.lower()
                 )
 
+
         for genre in (
             preference.get(
                 "avoid_genres",
@@ -222,21 +264,28 @@ def build_fallback_group_insights(
                     label.lower()
                 )
 
-        max_runtime = (
+
+        runtime = (
             preference.get(
                 "max_runtime"
             )
         )
 
-        if max_runtime:
-            runtime = safe_int(
-                max_runtime,
-                0,
+        if runtime:
+            runtime_value = (
+                safe_int(
+                    runtime,
+                    0,
+                )
             )
 
-            if runtime > 0:
+            if (
+                runtime_value >
+                0
+            ):
                 label = (
-                    f"Under {runtime} minutes"
+                    f"Under "
+                    f"{runtime_value} minutes"
                 )
 
                 if (
@@ -250,6 +299,7 @@ def build_fallback_group_insights(
                     seen_constraints.add(
                         label.lower()
                     )
+
 
         for constraint in (
             preference.get(
@@ -275,69 +325,97 @@ def build_fallback_group_insights(
                     label.lower()
                 )
 
+
     return {
         "shared_preferences":
-            shared_preferences[:6],
+            shared_preferences[
+                :6
+            ],
 
         "hard_constraints":
-            hard_constraints[:6],
+            hard_constraints[
+                :6
+            ],
     }
 
 
 # ---------------------------------------------------------
-# DEDUPLICATE CANDIDATES
+# DEDUPE
 # ---------------------------------------------------------
 
 def deduplicate_candidates(
-    candidates: list[dict],
+    candidates:
+        list[dict],
 ) -> list[dict]:
+
     unique = []
+
     seen_ids = set()
 
-    for movie in candidates:
-        movie_id = movie.get(
-            "id"
+    for item in (
+        candidates
+    ):
+        item_id = (
+            safe_int(
+                item.get(
+                    "id"
+                ),
+                0,
+            )
         )
 
-        if not movie_id:
+        if (
+            not item_id
+        ):
             continue
 
-        normalized_id = safe_int(
-            movie_id,
-            0,
-        )
-
-        if not normalized_id:
-            continue
-
-        if normalized_id in seen_ids:
+        if (
+            item_id
+            in seen_ids
+        ):
             continue
 
         seen_ids.add(
-            normalized_id
+            item_id
         )
 
         unique.append(
-            movie
+            item
         )
 
     return unique
 
 
 # ---------------------------------------------------------
-# CANDIDATE SEARCH
+# SEARCH
 # ---------------------------------------------------------
 
 def search_candidate_pool(
     *,
-    preferred_genres: list[str],
-    avoid_genres: list[str],
-    max_runtime: int | None,
-    limit: int,
+
+    content_type:
+        ContentType,
+
+    preferred_genres:
+        list[str],
+
+    avoid_genres:
+        list[str],
+
+    max_runtime:
+        int
+        | None,
+
+    limit:
+        int,
 ) -> list[dict]:
+
     try:
         return (
             get_candidate_movies(
+                content_type=
+                    content_type,
+
                 preferred_genres=
                     preferred_genres,
 
@@ -347,36 +425,47 @@ def search_candidate_pool(
                 max_runtime=
                     max_runtime,
 
-                limit=limit,
+                limit=
+                    limit,
             )
+
             or []
         )
 
     except Exception as exc:
         print(
             "[Recommendation search] "
-            f"Candidate search failed: {exc}"
+            f"Candidate search failed: "
+            f"{exc}"
         )
 
         return []
 
 
 # ---------------------------------------------------------
-# VALIDATE CANDIDATES
+# VALIDATION
 # ---------------------------------------------------------
 
 def validate_candidates(
-    candidates: list[dict],
-    parsed_preferences: list[dict],
+    candidates:
+        list[dict],
+
+    parsed_preferences:
+        list[dict],
 ) -> list[dict]:
-    if not candidates:
+
+    if (
+        not candidates
+    ):
         return []
 
     metadata_valid = (
         filter_candidates(
             candidates,
+
             parsed_preferences,
         )
+
         or []
     )
 
@@ -386,7 +475,9 @@ def validate_candidates(
         f"{len(metadata_valid)} metadata-valid"
     )
 
-    if not metadata_valid:
+    if (
+        not metadata_valid
+    ):
         return []
 
     semantic_valid = (
@@ -397,6 +488,7 @@ def validate_candidates(
             parsed_preferences=
                 parsed_preferences,
         )
+
         or []
     )
 
@@ -410,54 +502,73 @@ def validate_candidates(
 
 
 # ---------------------------------------------------------
-# MULTI-PASS RETRIEVAL
+# MULTI-PASS SEARCH
 # ---------------------------------------------------------
 
 def get_valid_candidate_pool(
     *,
-    preferred_genres: list[str],
-    avoid_genres: list[str],
-    max_runtime: int | None,
-    parsed_preferences: list[dict],
-    desired_count: int = 10,
+
+    content_type:
+        ContentType,
+
+    preferred_genres:
+        list[str],
+
+    avoid_genres:
+        list[str],
+
+    max_runtime:
+        int
+        | None,
+
+    parsed_preferences:
+        list[dict],
+
+    desired_count:
+        int = 10,
 ) -> list[dict]:
-    accumulated_valid: list[
-        dict
-    ] = []
 
-    accumulated_ids = set()
+    valid = []
 
-    def add_valid(
-        movies: list[dict],
+    seen_ids = set()
+
+
+    def add_movies(
+        movies:
+            list[dict],
     ):
         for movie in movies:
-            movie_id = safe_int(
-                movie.get(
-                    "id"
-                ),
-                0,
+
+            movie_id = (
+                safe_int(
+                    movie.get(
+                        "id"
+                    ),
+                    0,
+                )
             )
 
-            if not movie_id:
+            if (
+                not movie_id
+            ):
                 continue
 
             if (
                 movie_id
-                in accumulated_ids
+                in seen_ids
             ):
                 continue
 
-            accumulated_ids.add(
+            seen_ids.add(
                 movie_id
             )
 
-            accumulated_valid.append(
+            valid.append(
                 movie
             )
 
-    # -----------------------------------------------------
+
     # PASS 1
-    # -----------------------------------------------------
 
     print(
         "[Recommendation search] "
@@ -466,6 +577,9 @@ def get_valid_candidate_pool(
 
     pass_one = (
         search_candidate_pool(
+            content_type=
+                content_type,
+
             preferred_genres=
                 preferred_genres,
 
@@ -475,32 +589,29 @@ def get_valid_candidate_pool(
             max_runtime=
                 max_runtime,
 
-            limit=24,
+            limit=
+                24,
         )
     )
 
-    pass_one_valid = (
+    add_movies(
         validate_candidates(
             pass_one,
+
             parsed_preferences,
         )
     )
 
-    add_valid(
-        pass_one_valid
-    )
-
     if (
         len(
-            accumulated_valid
-        )
-        >= desired_count
+            valid
+        ) >=
+        desired_count
     ):
-        return accumulated_valid
+        return valid
 
-    # -----------------------------------------------------
+
     # PASS 2
-    # -----------------------------------------------------
 
     print(
         "[Recommendation search] "
@@ -509,6 +620,9 @@ def get_valid_candidate_pool(
 
     pass_two = (
         search_candidate_pool(
+            content_type=
+                content_type,
+
             preferred_genres=
                 preferred_genres,
 
@@ -518,55 +632,58 @@ def get_valid_candidate_pool(
             max_runtime=
                 max_runtime,
 
-            limit=36,
+            limit=
+                36,
         )
     )
 
     pass_two = [
-        movie
-        for movie
+        item
+
+        for item
         in pass_two
+
         if safe_int(
-            movie.get(
+            item.get(
                 "id"
             ),
             0,
         )
-        not in accumulated_ids
+        not in seen_ids
     ]
 
-    pass_two_valid = (
+    add_movies(
         validate_candidates(
             pass_two,
+
             parsed_preferences,
         )
     )
 
-    add_valid(
-        pass_two_valid
-    )
-
     if (
         len(
-            accumulated_valid
-        )
-        >= desired_count
+            valid
+        ) >=
+        desired_count
     ):
-        return accumulated_valid
+        return valid
 
-    # -----------------------------------------------------
+
     # PASS 3
-    # BROADER DISCOVERY, HARD CONSTRAINTS PRESERVED
-    # -----------------------------------------------------
 
     print(
         "[Recommendation search] "
-        "Pass 3: broad discovery with hard constraints preserved"
+        "Pass 3: broad discovery with "
+        "hard constraints preserved"
     )
 
     pass_three = (
         search_candidate_pool(
-            preferred_genres=[],
+            content_type=
+                content_type,
+
+            preferred_genres=
+                [],
 
             avoid_genres=
                 avoid_genres,
@@ -574,53 +691,68 @@ def get_valid_candidate_pool(
             max_runtime=
                 max_runtime,
 
-            limit=40,
+            limit=
+                40,
         )
     )
 
     pass_three = [
-        movie
-        for movie
+        item
+
+        for item
         in pass_three
+
         if safe_int(
-            movie.get(
+            item.get(
                 "id"
             ),
             0,
         )
-        not in accumulated_ids
+        not in seen_ids
     ]
 
-    pass_three_valid = (
+    add_movies(
         validate_candidates(
             pass_three,
+
             parsed_preferences,
         )
     )
 
-    add_valid(
-        pass_three_valid
-    )
-
-    return accumulated_valid
+    return valid
 
 
 # ---------------------------------------------------------
-# BALANCED LLM PAYLOAD
+# BALANCED PAYLOAD
 # ---------------------------------------------------------
 
 def build_balanced_llm_payload(
-    candidates: list[dict],
-    preferred_genres: list[str],
-    limit: int = 16,
+    candidates:
+        list[dict],
+
+    preferred_genres:
+        list[str],
+
+    limit:
+        int = 16,
 ):
-    if len(candidates) <= limit:
+
+    if (
+        len(
+            candidates
+        ) <=
+        limit
+    ):
         return candidates
 
     selected = []
+
     selected_ids = set()
 
-    for movie in candidates[:6]:
+
+    for movie in (
+        candidates[:6]
+    ):
         selected.append(
             movie
         )
@@ -634,17 +766,27 @@ def build_balanced_llm_payload(
             )
         )
 
-    for genre in preferred_genres:
-        genre_lower = str(
-            genre
-        ).lower()
 
-        for movie in candidates:
-            movie_id = safe_int(
-                movie.get(
-                    "id"
-                ),
-                0,
+    for genre in (
+        preferred_genres
+    ):
+        target_genre = (
+            str(
+                genre
+            )
+            .lower()
+        )
+
+        for movie in (
+            candidates
+        ):
+            movie_id = (
+                safe_int(
+                    movie.get(
+                        "id"
+                    ),
+                    0,
+                )
             )
 
             if (
@@ -656,17 +798,20 @@ def build_balanced_llm_payload(
 
             movie_genres = [
                 str(
-                    movie_genre
+                    g
                 ).lower()
-                for movie_genre
-                in movie.get(
-                    "genres",
-                    [],
+
+                for g in (
+                    movie.get(
+                        "genres",
+                        [],
+                    )
+                    or []
                 )
             ]
 
             if (
-                genre_lower
+                target_genre
                 in movie_genres
             ):
                 selected.append(
@@ -679,16 +824,31 @@ def build_balanced_llm_payload(
 
                 break
 
-        if len(selected) >= limit:
+        if (
+            len(
+                selected
+            ) >=
+            limit
+        ):
             break
 
-    if len(selected) < limit:
-        for movie in candidates:
-            movie_id = safe_int(
-                movie.get(
-                    "id"
-                ),
-                0,
+
+    if (
+        len(
+            selected
+        ) <
+        limit
+    ):
+        for movie in (
+            candidates
+        ):
+            movie_id = (
+                safe_int(
+                    movie.get(
+                        "id"
+                    ),
+                    0,
+                )
             )
 
             if (
@@ -706,91 +866,117 @@ def build_balanced_llm_payload(
                 movie_id
             )
 
-            if len(selected) >= limit:
+            if (
+                len(
+                    selected
+                ) >=
+                limit
+            ):
                 break
 
-    return selected[:limit]
+
+    return selected[
+        :limit
+    ]
 
 
 # ---------------------------------------------------------
-# CLEAN CANDIDATE FOR LLM
+# CLEAN CANDIDATES
 # ---------------------------------------------------------
 
 def clean_candidate_for_llm(
-    movie: dict,
+    item:
+        dict,
 ):
+
     return {
         "id":
-            movie.get(
+            item.get(
                 "id"
             ),
 
         "title":
-            movie.get(
+            item.get(
                 "title"
             ),
 
+        "content_type":
+            item.get(
+                "content_type"
+            ),
+
         "overview":
-            movie.get(
+            item.get(
                 "overview",
                 "",
             ),
 
         "release_date":
-            movie.get(
+            item.get(
                 "release_date"
             ),
 
         "vote_average":
-            movie.get(
+            item.get(
                 "vote_average",
                 0,
             ),
 
         "vote_count":
-            movie.get(
+            item.get(
                 "vote_count",
                 0,
             ),
 
         "runtime":
-            movie.get(
+            item.get(
                 "runtime"
             ),
 
         "genres":
-            movie.get(
+            item.get(
                 "genres",
                 [],
             ),
 
-        "candidate_sources":
-            movie.get(
-                "candidate_sources",
-                [],
+        "number_of_seasons":
+            item.get(
+                "number_of_seasons"
+            ),
+
+        "number_of_episodes":
+            item.get(
+                "number_of_episodes"
             ),
 
         "constraint_validation":
-            movie.get(
+            item.get(
                 "constraint_validation"
             ),
     }
 
 
 # ---------------------------------------------------------
-# FINAL DIVERSITY GUARD
+# FINAL DIVERSITY
 # ---------------------------------------------------------
 
 def enforce_final_diversity(
-    ranked_movies: list[dict],
-    preferred_genres: list[str],
-    limit: int = 6,
+    ranked_movies:
+        list[dict],
+
+    preferred_genres:
+        list[str],
+
+    limit:
+        int = 6,
 ):
+
     animation_requested = any(
         str(
             genre
         ).lower()
         == "animation"
+
         for genre
         in preferred_genres
     )
@@ -798,20 +984,28 @@ def enforce_final_diversity(
     animation_cap = (
         limit
         if animation_requested
-        else 2
+        else
+        2
     )
 
     selected = []
+
     selected_ids = set()
 
     animation_count = 0
 
-    for movie in ranked_movies:
-        movie_id = safe_int(
-            movie.get(
-                "id"
-            ),
-            0,
+
+    for movie in (
+        ranked_movies
+    ):
+
+        movie_id = (
+            safe_int(
+                movie.get(
+                    "id"
+                ),
+                0,
+            )
         )
 
         if (
@@ -821,26 +1015,30 @@ def enforce_final_diversity(
         ):
             continue
 
-        movie_genres = [
+        genres = [
             str(
                 genre
             ).lower()
+
             for genre
-            in movie.get(
-                "genres",
-                [],
+            in (
+                movie.get(
+                    "genres",
+                    [],
+                )
+                or []
             )
         ]
 
         is_animation = (
             "animation"
-            in movie_genres
+            in genres
         )
 
         if (
             is_animation
-            and animation_count
-            >= animation_cap
+            and animation_count >=
+            animation_cap
         ):
             continue
 
@@ -852,43 +1050,45 @@ def enforce_final_diversity(
             movie_id
         )
 
-        if is_animation:
-            animation_count += 1
+        if (
+            is_animation
+        ):
+            animation_count += (
+                1
+            )
 
-        if len(selected) >= limit:
+        if (
+            len(
+                selected
+            ) >=
+            limit
+        ):
             break
 
-    if len(selected) < limit:
-        for movie in ranked_movies:
-            movie_id = safe_int(
-                movie.get(
-                    "id"
-                ),
-                0,
+
+    if (
+        len(
+            selected
+        ) <
+        limit
+    ):
+        for movie in (
+            ranked_movies
+        ):
+
+            movie_id = (
+                safe_int(
+                    movie.get(
+                        "id"
+                    ),
+                    0,
+                )
             )
 
             if (
                 not movie_id
                 or movie_id
                 in selected_ids
-            ):
-                continue
-
-            movie_genres = [
-                str(
-                    genre
-                ).lower()
-                for genre
-                in movie.get(
-                    "genres",
-                    [],
-                )
-            ]
-
-            if (
-                "animation"
-                in movie_genres
-                and not animation_requested
             ):
                 continue
 
@@ -900,30 +1100,44 @@ def enforce_final_diversity(
                 movie_id
             )
 
-            if len(selected) >= limit:
+            if (
+                len(
+                    selected
+                ) >=
+                limit
+            ):
                 break
 
-    return selected[:limit]
+
+    return selected[
+        :limit
+    ]
 
 
 # ---------------------------------------------------------
-# SAFE JSON PARSING
+# JSON PARSER
 # ---------------------------------------------------------
 
 def parse_ranking_response(
-    raw_text: str,
+    raw_text:
+        str,
 ) -> dict:
+
     raw_text = (
         raw_text
         or ""
     ).strip()
 
-    if not raw_text:
+    if (
+        not raw_text
+    ):
         return {}
 
     try:
-        parsed = json.loads(
-            raw_text
+        parsed = (
+            json.loads(
+                raw_text
+            )
         )
 
         if isinstance(
@@ -932,41 +1146,53 @@ def parse_ranking_response(
         ):
             return parsed
 
-    except json.JSONDecodeError:
+    except (
+        json.JSONDecodeError
+    ):
         pass
 
-    cleaned_text = (
-        raw_text.strip()
+
+    cleaned = (
+        raw_text
     )
 
-    if cleaned_text.startswith(
-        "```json"
+    if (
+        cleaned.startswith(
+            "```json"
+        )
     ):
-        cleaned_text = (
-            cleaned_text[
-                len("```json"):
-            ]
+        cleaned = cleaned[
+            len(
+                "```json"
+            ):
+        ]
+
+    elif (
+        cleaned.startswith(
+            "```"
+        )
+    ):
+        cleaned = cleaned[
+            len(
+                "```"
+            ):
+        ]
+
+    if (
+        cleaned.endswith(
+            "```"
+        )
+    ):
+        cleaned = (
+            cleaned[:-3]
         )
 
-    elif cleaned_text.startswith(
-        "```"
-    ):
-        cleaned_text = (
-            cleaned_text[
-                len("```"):
-            ]
-        )
-
-    if cleaned_text.endswith(
-        "```"
-    ):
-        cleaned_text = (
-            cleaned_text[:-3]
-        )
 
     try:
-        parsed = json.loads(
-            cleaned_text.strip()
+        parsed = (
+            json.loads(
+                cleaned.strip()
+            )
         )
 
         if isinstance(
@@ -975,24 +1201,32 @@ def parse_ranking_response(
         ):
             return parsed
 
-    except json.JSONDecodeError:
+    except (
+        json.JSONDecodeError
+    ):
         pass
+
 
     print(
         "[Recommendation ranking] "
-        "Could not parse ranking JSON."
+        "Unable to parse JSON."
     )
 
     return {}
 
 
 # ---------------------------------------------------------
-# GENERATE RECOMMENDATIONS
+# GENERATE
 # ---------------------------------------------------------
 
 def generate_recommendations(
-    participants: list[dict],
+    participants:
+        list[dict],
+
+    content_type:
+        ContentType = "movie",
 ):
+
     parsed_preferences = (
         parse_group_preferences(
             participants
@@ -1009,18 +1243,19 @@ def generate_recommendations(
         )
     )
 
+
     fallback_insights = (
         build_fallback_group_insights(
             parsed_preferences
         )
     )
 
-    # -----------------------------------------------------
-    # RETRIEVE VALID CANDIDATES
-    # -----------------------------------------------------
 
     candidates = (
         get_valid_candidate_pool(
+            content_type=
+                content_type,
+
             preferred_genres=
                 preferred_genres,
 
@@ -1033,7 +1268,8 @@ def generate_recommendations(
             parsed_preferences=
                 parsed_preferences,
 
-            desired_count=10,
+            desired_count=
+                10,
         )
     )
 
@@ -1045,28 +1281,34 @@ def generate_recommendations(
 
     print(
         "[Recommendation pipeline] "
-        f"{len(candidates)} total valid candidates "
-        "after multi-pass search."
+        f"{len(candidates)} total valid "
+        f"{content_type} candidates."
     )
 
-    if not candidates:
+
+    if (
+        not candidates
+    ):
         return {
             "summary":
-                "No movies satisfied every hard constraint.",
+                "No strong match found.",
 
             "group_profile":
                 (
-                    "CommonGround searched multiple "
-                    "candidate pools but could not find "
-                    "a movie that safely satisfied every "
-                    "hard constraint."
+                    "CommonGround could not "
+                    "find enough candidates "
+                    "that safely satisfy the "
+                    "group's deal-breakers."
                 ),
 
             "group_mood":
                 (
-                    "The group's true deal-breakers "
-                    "currently create a very narrow match."
+                    "The group's restrictions "
+                    "currently create a narrow match."
                 ),
+
+            "content_type":
+                content_type,
 
             "shared_preferences":
                 fallback_insights[
@@ -1078,43 +1320,51 @@ def generate_recommendations(
                     "hard_constraints"
                 ],
 
-            "movies": [],
+            "movies":
+                [],
         }
 
-    # -----------------------------------------------------
-    # BUILD RANKING PAYLOAD
-    # -----------------------------------------------------
 
     balanced_candidates = (
         build_balanced_llm_payload(
-            candidates=
-                candidates,
+            candidates,
 
-            preferred_genres=
-                preferred_genres,
+            preferred_genres,
 
-            limit=16,
+            limit=
+                16,
         )
     )
+
 
     candidate_payload = [
         clean_candidate_for_llm(
-            movie
+            item
         )
-        for movie
+
+        for item
         in balanced_candidates
     ]
 
-    animation_requested = any(
-        str(
-            genre
-        ).lower()
-        == "animation"
-        for genre
-        in preferred_genres
+
+    content_label = (
+        "movie"
+        if content_type ==
+        "movie"
+        else
+        "TV show"
     )
 
+
     prompt = f"""
+You are ranking candidates for CommonGround,
+a multi-person entertainment recommendation
+system.
+
+The requested content type is:
+
+{content_label}
+
 Participants and parsed preferences:
 
 {json.dumps(parsed_preferences, indent=2)}
@@ -1127,30 +1377,23 @@ Hard genre exclusions:
 
 {json.dumps(avoid_genres, indent=2)}
 
-Animation explicitly requested:
-
-{animation_requested}
-
-Real movie candidates that already passed
-metadata filtering and semantic hard-constraint
-validation:
+Validated {content_label} candidates:
 
 {json.dumps(candidate_payload, indent=2)}
 
-Your job is to recommend the best movies
-for the entire group.
+Rank the strongest options for the ENTIRE group.
 
 Return JSON exactly like:
 
 {{
   "summary":
-    "Short headline describing the group's ideal movie",
+    "Short headline describing the ideal group choice",
 
   "group_profile":
     "Short description of the group's shared taste",
 
   "group_mood":
-    "Short consumer-facing description of tonight's mood",
+    "Consumer-facing description of tonight's mood",
 
   "shared_preferences": [
     "Mystery",
@@ -1165,77 +1408,62 @@ Return JSON exactly like:
     {{
       "id": 123,
 
-      "group_score": 94,
+      "group_score": 91,
 
       "explanation":
         "Why this works for the whole group",
 
       "participant_fits": [
         {{
-          "name": "Viewer",
+          "name":
+            "Viewer",
 
-          "score": 96,
+          "score":
+            90,
 
           "reason":
-            "Why this fits this viewer"
+            "Why it fits this participant"
         }}
       ]
     }}
   ]
 }}
 
-IMPORTANT RULES:
+IMPORTANT:
 
-- Only use movie IDs from the supplied
-  candidate list.
+- Recommend ONLY {content_label}s.
 
-- Return 6 movies if at least
-  6 valid candidates exist.
+- Only use IDs from the supplied candidate list.
 
-- If fewer than 6 candidates exist,
-  return every legitimate candidate.
-
-- Scores must always be between
-  0 and 100.
+- Return 6 results if at least 6 valid candidates exist.
 
 - Hard constraints are mandatory.
 
-- Soft preferences influence ranking,
-  but should never behave like absolute bans.
+- Soft preferences affect ranking but must NOT behave like bans.
 
-- A movie does not have to satisfy every soft
-  preference perfectly to be a strong compromise.
+- A candidate does not need to perfectly satisfy every soft preference.
 
-- Balance satisfaction across participants.
+- Balance satisfaction fairly across participants.
 
-- Prefer meaningful variety in genre,
-  tone, and release era when several candidates
-  have similar compatibility.
+- Prefer useful variety in genre, era, and tone.
 
-- "Critically acclaimed" is a ranking preference,
-  not automatically a numerical cutoff.
+- Do not let one universally acclaimed candidate dominate every search.
 
-- "Not depressing" is a soft tonal preference
-  unless explicitly stated as an absolute ban.
+- "Critically acclaimed" is a preference, not automatically a minimum numerical rating.
 
-- "Funny" does not mean every recommendation
-  must be a Comedy.
+- "Not depressing" is usually a soft tonal preference.
 
-- "Something different" does not mean
-  mainstream movies are automatically invalid.
+- "Funny" does not require every recommendation to be a comedy.
 
-- If Animation was NOT explicitly requested,
-  do not allow animated movies to dominate.
+- Avoid inflated scores.
 
-- Do not invent facts outside the supplied
-  candidate data.
+- Scores over 95 should be rare.
+
+- Do not invent facts outside the candidate metadata.
 
 - Return valid JSON only.
 """
 
-    # -----------------------------------------------------
-    # OPENAI RANKING
-    # -----------------------------------------------------
 
     try:
         response = (
@@ -1261,68 +1489,82 @@ IMPORTANT RULES:
     except Exception as exc:
         print(
             "[Recommendation ranking] "
-            f"Ranking request failed: {exc}"
+            f"Request failed: "
+            f"{exc}"
         )
 
         ranking = {}
 
-    # -----------------------------------------------------
-    # REBUILD REAL MOVIES FROM MODEL IDS
-    # -----------------------------------------------------
 
     candidate_lookup = {
         safe_int(
-            movie["id"],
+            candidate.get(
+                "id"
+            ),
             0,
         ):
-            movie
-        for movie
+            candidate
+
+        for candidate
         in candidates
+
         if safe_int(
-            movie.get(
+            candidate.get(
                 "id"
             ),
             0,
         )
     }
 
-    movies = []
 
-    ranked_movies = (
+    ranked_items = (
         ranking.get(
             "movies",
-            []
+            [],
         )
         or []
     )
 
-    if not isinstance(
-        ranked_movies,
-        list,
+    if (
+        not isinstance(
+            ranked_items,
+            list,
+        )
     ):
-        ranked_movies = []
+        ranked_items = []
+
+
+    movies = []
+
 
     print(
         "[Recommendation ranking] "
-        f"Model returned {len(ranked_movies)} ranked movies."
+        f"Model returned "
+        f"{len(ranked_items)} ranked results."
     )
 
-    for ranked in ranked_movies:
-        if not isinstance(
-            ranked,
-            dict,
+
+    for ranked in (
+        ranked_items
+    ):
+
+        if (
+            not isinstance(
+                ranked,
+                dict,
+            )
         ):
             continue
 
-        ranked_id = safe_int(
-            ranked.get(
-                "id"
-            ),
-            0,
-        )
 
-        if not ranked_id:
-            continue
+        ranked_id = (
+            safe_int(
+                ranked.get(
+                    "id"
+                ),
+                0,
+            )
+        )
 
         movie = (
             candidate_lookup.get(
@@ -1330,16 +1572,14 @@ IMPORTANT RULES:
             )
         )
 
-        if not movie:
-            print(
-                "[Recommendation ranking] "
-                f"Unknown candidate ID "
-                f"{ranked_id}; skipping."
-            )
-
+        if (
+            not movie
+        ):
             continue
 
+
         participant_fits = []
+
 
         raw_fits = (
             ranked.get(
@@ -1349,24 +1589,35 @@ IMPORTANT RULES:
             or []
         )
 
-        if not isinstance(
-            raw_fits,
-            list,
+
+        if (
+            not isinstance(
+                raw_fits,
+                list,
+            )
         ):
             raw_fits = []
 
-        for fit in raw_fits:
-            if not isinstance(
-                fit,
-                dict,
+
+        for fit in (
+            raw_fits
+        ):
+
+            if (
+                not isinstance(
+                    fit,
+                    dict,
+                )
             ):
                 continue
 
-            fit_score = safe_float(
-                fit.get(
-                    "score"
-                ),
-                0.0,
+            score = (
+                safe_float(
+                    fit.get(
+                        "score"
+                    ),
+                    0,
+                )
             )
 
             participant_fits.append(
@@ -1382,10 +1633,12 @@ IMPORTANT RULES:
                     "score":
                         min(
                             100,
+
                             max(
                                 0,
+
                                 round(
-                                    fit_score
+                                    score
                                 ),
                             ),
                         ),
@@ -1400,29 +1653,33 @@ IMPORTANT RULES:
                 }
             )
 
-        group_score = safe_float(
-            ranked.get(
-                "group_score"
-            ),
-            0.0,
+
+        group_score = (
+            safe_float(
+                ranked.get(
+                    "group_score"
+                ),
+                0,
+            )
         )
 
-        group_score = min(
-            100,
-            max(
-                0,
-                round(
-                    group_score
-                ),
-            ),
-        )
 
         movies.append(
             {
                 **movie,
 
                 "group_score":
-                    group_score,
+                    min(
+                        100,
+
+                        max(
+                            0,
+
+                            round(
+                                group_score
+                            ),
+                        ),
+                    ),
 
                 "explanation":
                     str(
@@ -1437,20 +1694,17 @@ IMPORTANT RULES:
             }
         )
 
-    print(
-        "[Recommendation ranking] "
-        f"{len(movies)} ranked movies successfully "
-        "matched back to candidates."
+
+    target_count = (
+        min(
+            6,
+
+            len(
+                candidates
+            ),
+        )
     )
 
-    # -----------------------------------------------------
-    # GUARANTEED FALLBACK
-    # -----------------------------------------------------
-
-    target_count = min(
-        6,
-        len(candidates),
-    )
 
     used_ids = {
         safe_int(
@@ -1459,53 +1713,73 @@ IMPORTANT RULES:
             ),
             0,
         )
+
         for movie
         in movies
-        if safe_int(
-            movie.get(
-                "id"
-            ),
-            0,
-        )
     }
 
-    if len(movies) < target_count:
+
+    # FALLBACK
+
+    if (
+        len(
+            movies
+        ) <
+        target_count
+    ):
         print(
             "[Recommendation fallback] "
-            f"Need {target_count} movies but ranking "
-            f"produced {len(movies)}. "
-            "Filling from validated candidates."
+            f"Filling "
+            f"{target_count - len(movies)} "
+            f"missing results."
         )
+
 
         fallback_candidates = sorted(
             candidates,
-            key=lambda candidate: (
+
+            key=lambda item: (
                 safe_float(
-                    candidate.get(
+                    item.get(
                         "vote_average"
                     ),
-                    0.0,
+                    0,
                 ),
+
                 safe_float(
-                    candidate.get(
+                    item.get(
                         "vote_count"
                     ),
-                    0.0,
+                    0,
                 ),
             ),
+
             reverse=True,
         )
 
-        for candidate in fallback_candidates:
-            if len(movies) >= target_count:
+
+        for candidate in (
+            fallback_candidates
+        ):
+
+            if (
+                len(
+                    movies
+                ) >=
+                target_count
+            ):
                 break
 
-            candidate_id = safe_int(
-                candidate.get(
-                    "id"
-                ),
-                0,
+
+            candidate_id = (
+                safe_int(
+                    candidate.get(
+                        "id"
+                    ),
+                    0,
+                )
             )
+
 
             if (
                 not candidate_id
@@ -1513,6 +1787,7 @@ IMPORTANT RULES:
                 in used_ids
             ):
                 continue
+
 
             movies.append(
                 {
@@ -1523,10 +1798,11 @@ IMPORTANT RULES:
 
                     "explanation":
                         (
-                            "This movie passed the group's "
-                            "hard constraints and remains a "
-                            "strong alternative based on the "
-                            "group's shared preferences."
+                            f"This {content_label} "
+                            "satisfies the group's "
+                            "hard constraints and "
+                            "remains a strong "
+                            "alternative."
                         ),
 
                     "participant_fits":
@@ -1534,68 +1810,63 @@ IMPORTANT RULES:
                 }
             )
 
+
             used_ids.add(
                 candidate_id
             )
 
-    # -----------------------------------------------------
-    # AUTHORITATIVE SORT
-    # -----------------------------------------------------
 
     movies = sorted(
         movies,
-        key=lambda movie:
+
+        key=lambda item:
             safe_float(
-                movie.get(
+                item.get(
                     "group_score"
                 ),
-                0.0,
+                0,
             ),
+
         reverse=True,
     )
 
-    print(
-        "[Recommendation fallback] "
-        f"{len(movies)} movies available before diversity."
-    )
-
-    # -----------------------------------------------------
-    # FINAL DIVERSITY
-    # -----------------------------------------------------
 
     movies = (
         enforce_final_diversity(
-            ranked_movies=
-                movies,
+            movies,
 
-            preferred_genres=
-                preferred_genres,
+            preferred_genres,
 
-            limit=6,
+            limit=
+                6,
         )
     )
 
+
     print(
         "[Recommendation final] "
-        f"Returning {len(movies)} movies."
+        f"Returning "
+        f"{len(movies)} "
+        f"{content_type} results."
     )
 
-    # -----------------------------------------------------
-    # FINAL INSIGHTS
-    # -----------------------------------------------------
 
     shared_preferences = (
         ranking.get(
             "shared_preferences"
         )
+
         or fallback_insights[
             "shared_preferences"
         ]
     )
 
-    if not isinstance(
-        shared_preferences,
-        list,
+
+    if (
+        not isinstance(
+            shared_preferences,
+            list,
+        )
     ):
         shared_preferences = (
             fallback_insights[
@@ -1603,18 +1874,23 @@ IMPORTANT RULES:
             ]
         )
 
+
     hard_constraints = (
         ranking.get(
             "hard_constraints"
         )
+
         or fallback_insights[
             "hard_constraints"
         ]
     )
 
-    if not isinstance(
-        hard_constraints,
-        list,
+
+    if (
+        not isinstance(
+            hard_constraints,
+            list,
+        )
     ):
         hard_constraints = (
             fallback_insights[
@@ -1622,46 +1898,49 @@ IMPORTANT RULES:
             ]
         )
 
-    summary = (
-        ranking.get(
-            "summary"
-        )
-        or
-        "A balanced group recommendation."
-    )
-
-    group_profile = (
-        ranking.get(
-            "group_profile"
-        )
-        or
-        "CommonGround found several movies that satisfy the group's key constraints while balancing everyone's preferences."
-    )
-
-    group_mood = (
-        ranking.get(
-            "group_mood"
-        )
-        or
-        "A balanced movie night for everyone."
-    )
 
     return {
         "summary":
-            summary,
+            ranking.get(
+                "summary"
+            )
+            or
+            (
+                "A balanced group "
+                f"{content_label} recommendation."
+            ),
 
         "group_profile":
-            group_profile,
+            ranking.get(
+                "group_profile"
+            )
+            or "",
 
         "group_mood":
-            group_mood,
+            ranking.get(
+                "group_mood"
+            )
+            or
+            (
+                "A strong watch for "
+                "the whole group."
+            ),
+
+        "content_type":
+            content_type,
 
         "shared_preferences":
-            shared_preferences[:6],
+            shared_preferences[
+                :6
+            ],
 
         "hard_constraints":
-            hard_constraints[:6],
+            hard_constraints[
+                :6
+            ],
 
         "movies":
-            movies[:6],
+            movies[
+                :6
+            ],
     }
